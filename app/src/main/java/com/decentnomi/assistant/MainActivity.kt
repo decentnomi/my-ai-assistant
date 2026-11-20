@@ -8,12 +8,14 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.text.InputType
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -28,6 +30,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private lateinit var keyBox: EditText
     private lateinit var modelBox: EditText
+    private lateinit var autoSend: CheckBox
     private lateinit var statusView: TextView
     private lateinit var youView: TextView
     private lateinit var replyView: TextView
@@ -41,6 +44,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 Tum ek phone assistant ho. User ki baat (Urdu, English ya Roman Urdu) ko sirf ek JSON ma badlo, aur kuch nahi likho.
 Formats:
 {"action":"call","name":"<contact ka naam English letters ma>"} jab user kisi ko call karna chahe.
+{"action":"whatsapp","name":"<contact ka naam English letters ma>","message":"<user ki taraf se likha hua chhota, qudrati message, Roman Urdu ma, 'main' ke andaz ma>"} jab user kisi ko WhatsApp par message bhejna chahe.
 {"action":"open_app","app":"<app ka naam English ma, jaise WhatsApp, YouTube, Chrome>"} jab user koi app kholna chahe.
 {"action":"chat","reply":"<Roman Urdu ma 1 se 3 jumlon ka mukhtasir jawab>"} baqi har baat ke liye.
 """
@@ -73,6 +77,16 @@ Formats:
             statusView.text = "Save ho gaya"
         }
 
+        val accBtn = Button(this)
+        accBtn.text = "Accessibility ki ijazat (ek baar)"
+        accBtn.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        autoSend = CheckBox(this)
+        autoSend.text = "WhatsApp message khud send karen"
+        autoSend.isChecked = true
+
         val langBtn = Button(this)
         langBtn.text = "Zubaan: Urdu (tap karke badlen)"
         langBtn.setOnClickListener {
@@ -100,6 +114,8 @@ Formats:
         root.addView(keyBox)
         root.addView(modelBox)
         root.addView(saveBtn)
+        root.addView(accBtn)
+        root.addView(autoSend)
         root.addView(langBtn)
         root.addView(micBtn)
         root.addView(statusView)
@@ -243,6 +259,8 @@ Formats:
         val action = j?.optString("action", "chat") ?: "chat"
         if (action == "call") {
             doCall(j?.optString("name") ?: "")
+        } else if (action == "whatsapp") {
+            doWhatsApp(j?.optString("name") ?: "", j?.optString("message") ?: "")
         } else if (action == "open_app") {
             doOpenApp(j?.optString("app") ?: "")
         } else {
@@ -269,6 +287,16 @@ Formats:
             ?: list.firstOrNull()
     }
 
+    private fun normalizeNumber(raw: String): String {
+        var d = raw.filter { it.isDigit() }
+        if (d.startsWith("00")) {
+            d = d.substring(2)
+        } else if (d.startsWith("0")) {
+            d = "92" + d.substring(1)
+        }
+        return d
+    }
+
     private fun doCall(name: String) {
         if (name.isBlank()) {
             say("Naam samajh nahi aaya")
@@ -290,6 +318,42 @@ Formats:
             startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(found.second))))
         } catch (e: Exception) {
             say("Call nahi lag saki: " + e.message)
+        }
+    }
+
+    private fun doWhatsApp(name: String, message: String) {
+        if (name.isBlank() || message.isBlank()) {
+            say("Naam ya message samajh nahi aaya")
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            say("Contacts ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
+            return
+        }
+        val found = findContact(name)
+        if (found == null) {
+            say("Contact " + name + " nahi mila")
+            return
+        }
+        val number = normalizeNumber(found.second)
+        val uri = Uri.parse("https://wa.me/" + number + "?text=" + Uri.encode(message))
+        say(found.first + " ko WhatsApp par likh raha hoon: " + message)
+        if (autoSend.isChecked) {
+            AssistantAccessibilityService.arm()
+        }
+        var opened = false
+        for (pkg in arrayOf("com.whatsapp", "com.whatsapp.w4b")) {
+            if (opened) break
+            try {
+                val i = Intent(Intent.ACTION_VIEW, uri)
+                i.setPackage(pkg)
+                startActivity(i)
+                opened = true
+            } catch (e: Exception) {
+            }
+        }
+        if (!opened) {
+            say("WhatsApp nahi mili")
         }
     }
 
