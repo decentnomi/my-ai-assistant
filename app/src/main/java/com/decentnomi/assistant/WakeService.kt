@@ -10,7 +10,6 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
-import android.media.ToneGenerator
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -37,16 +36,10 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     private var ttsReady = false
     private var started = false
     private var mode = 0
+    private var nextMode = 0
     private var busy = false
+    private var lastHeard = ""
     private val safety = Runnable { resume() }
-
-    private val words = listOf(
-        "hello nomi", "hello no me", "hello know me", "hello nome", "hello gnome", "hello numi",
-        "nomi", "nomy", "numi", "noomi", "naumi", "gnomi", "nomee", "nomie",
-        "\u0928\u094B\u092E\u0940", "\u0928\u094B\u092E\u093F", "\u0928\u094C\u092E\u0940", "\u0928\u0942\u092E\u0940",
-        "\u0928\u094B\u092E\u0947", "\u0928\u0949\u092E\u0940", "\u0928\u0941\u092E\u0940",
-        "\u0646\u0648\u0645\u06CC", "\u0646\u0648\u0645\u0626\u06CC"
-    )
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -94,7 +87,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
         val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CH) else Notification.Builder(this)
-        return b.setContentTitle("Hello Nomi")
+        return b.setContentTitle("Decent")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(open)
@@ -105,9 +98,9 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     private fun startInForeground() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(NotificationChannel(CH, "Hello Nomi", NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(NotificationChannel(CH, "Decent", NotificationManager.IMPORTANCE_LOW))
         }
-        val n = buildNotif("'Hello Nomi' bolen")
+        val n = buildNotif("Decent bolen")
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
@@ -133,13 +126,6 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         }
     }
 
-    private fun tone() {
-        try {
-            ToneGenerator(AudioManager.STREAM_MUSIC, 80).startTone(ToneGenerator.TONE_PROP_BEEP, 150)
-        } catch (e: Exception) {
-        }
-    }
-
     private fun listen() {
         if (!started || busy) return
         try {
@@ -155,7 +141,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 1000L)
             sr?.startListening(i)
-            setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "'Hello Nomi' bolen")
+            setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "suna: " + lastHeard + "  |  Decent bolen")
         } catch (e: Exception) {
             h.postDelayed({ listen() }, 2000)
         }
@@ -165,12 +151,13 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         val low = s.lowercase(Locale.ROOT)
         var bestIdx = -1
         var bestLen = 0
-        for (w in words) {
+        for (w in WakeWords.list(prefs)) {
             var from = 0
             while (true) {
                 val i = low.indexOf(w, from)
                 if (i < 0) break
-                if (i == 0 || !low[i - 1].isLetter()) {
+                val endOk = i + w.length >= low.length || !low[i + w.length].isLetter()
+                if ((i == 0 || !low[i - 1].isLetter()) && endOk) {
                     if (bestIdx < 0 || i < bestIdx) {
                         bestIdx = i
                         bestLen = w.length
@@ -185,25 +172,33 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     }
 
     private fun startCommandMode() {
-        mode = 1
-        tone()
+        busy = true
+        nextMode = 1
+        h.removeCallbacks(safety)
         try {
             sr?.cancel()
         } catch (e: Exception) {
         }
-        h.postDelayed({ listen() }, 200)
+        val hiOk = (tts?.isLanguageAvailable(Locale("hi", "IN")) ?: -2) >= TextToSpeech.LANG_AVAILABLE
+        if (hiOk) {
+            speak("\u091C\u0940, \u092C\u094B\u0932\u093F\u090F", "hi-IN", "Ji, boliye")
+        } else {
+            speak("Ji, boliye", "en-IN", "Ji, boliye")
+        }
     }
 
     private fun resume() {
         h.removeCallbacks(safety)
         if (!busy) return
         busy = false
-        mode = 0
+        mode = nextMode
+        nextMode = 0
         h.postDelayed({ listen() }, 400)
     }
 
     private fun process(text: String) {
         busy = true
+        nextMode = 0
         h.removeCallbacks(safety)
         try {
             sr?.cancel()
@@ -241,10 +236,10 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
 
     private fun deliver(r: Reply) {
         ChatLog.add(false, r.display)
-        speak(r.speak, r.lang)
+        speak(r.speak, r.lang, r.display)
     }
 
-    private fun speak(text: String, lang: String) {
+    private fun speak(text: String, lang: String, alt: String) {
         val t = tts
         if (t == null || !ttsReady || text.isBlank()) {
             resume()
@@ -252,11 +247,13 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         }
         val loc = if (lang.isBlank()) Locale("en", "IN") else Locale.forLanguageTag(lang)
         val r = t.setLanguage(loc)
+        var out = text
         if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
             t.setLanguage(Locale("en", "IN"))
+            out = alt
         }
         setStatus("Bol raha hoon...")
-        t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u")
+        t.speak(out, TextToSpeech.QUEUE_FLUSH, null, "u")
         h.postDelayed(safety, 20000)
     }
 
@@ -280,6 +277,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
                 return
             }
         }
+        lastHeard = list[0].take(50)
         h.postDelayed({ listen() }, 100)
     }
 
@@ -291,6 +289,8 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         }
         if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
             mode = 0
+        } else {
+            lastHeard = "err " + error
         }
         val wait = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 200L
         h.postDelayed({ listen() }, wait)

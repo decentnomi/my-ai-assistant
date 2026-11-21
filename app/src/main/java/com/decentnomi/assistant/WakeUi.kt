@@ -22,13 +22,13 @@ object WakeUi {
     fun add(act: Activity, root: LinearLayout) {
         val prefs = act.getSharedPreferences("assistant", Context.MODE_PRIVATE)
         val box = CheckBox(act)
-        box.text = "Mode C: 'Hello Nomi' bolte hi jag jaye (hamesha sunta rahe)"
+        box.text = "Mode C: Decent bolte hi jag jaye (hamesha sunta rahe)"
         box.isChecked = prefs.getBoolean("wake", false)
         box.setOnCheckedChangeListener { b, on ->
             if (on) {
                 if (!Settings.canDrawOverlays(act)) {
                     b.isChecked = false
-                    Toast.makeText(act, "Hello Nomi ko 'Display over other apps' ki ijazat den, phir dobara tick karen", Toast.LENGTH_LONG).show()
+                    Toast.makeText(act, "Decent ko 'Display over other apps' ki ijazat den, phir dobara tick karen", Toast.LENGTH_LONG).show()
                     act.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + act.packageName)))
                 } else if (act.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                     b.isChecked = false
