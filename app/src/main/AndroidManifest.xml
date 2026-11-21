@@ -19,7 +19,7 @@
         </intent>
     </queries>
     <application
-        android:label="My AI Assistant"
+        android:label="Hello Nomi"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
@@ -33,7 +33,7 @@
         <service
             android:name=".AssistantAccessibilityService"
             android:exported="false"
-            android:label="My AI Assistant"
+            android:label="Hello Nomi"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

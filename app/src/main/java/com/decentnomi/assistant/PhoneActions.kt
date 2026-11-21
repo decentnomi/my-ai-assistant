@@ -72,7 +72,7 @@ class PhoneActions(private val act: Activity, private val say: (String) -> Unit)
             return
         }
         if (!has(Manifest.permission.READ_CONTACTS) || !has(Manifest.permission.CALL_PHONE)) {
-            say("Contacts aur Phone ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
+            say("Contacts aur Phone ki ijazat dein (Settings, Apps, Hello Nomi, Permissions)")
             return
         }
         val found = findContact(name)
@@ -89,7 +89,7 @@ class PhoneActions(private val act: Activity, private val say: (String) -> Unit)
             return
         }
         if (!has(Manifest.permission.READ_CONTACTS)) {
-            say("Contacts ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
+            say("Contacts ki ijazat dein (Settings, Apps, Hello Nomi, Permissions)")
             return
         }
         val found = findContact(name)
@@ -125,7 +125,7 @@ class PhoneActions(private val act: Activity, private val say: (String) -> Unit)
             return
         }
         if (!has(Manifest.permission.READ_CONTACTS) || !has(Manifest.permission.SEND_SMS)) {
-            say("Contacts aur SMS ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
+            say("Contacts aur SMS ki ijazat dein (Settings, Apps, Hello Nomi, Permissions)")
             return
         }
         val found = findContact(name)
@@ -231,7 +231,7 @@ class PhoneActions(private val act: Activity, private val say: (String) -> Unit)
 
     fun brightness(level: Int) {
         if (!Settings.System.canWrite(act)) {
-            say("Brightness ke liye ijazat chahiye. Settings khul rahi hai, My AI Assistant ko allow karen, phir dobara bolen.")
+            say("Brightness ke liye ijazat chahiye. Settings khul rahi hai, Hello Nomi ko allow karen, phir dobara bolen.")
             try {
                 act.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + act.packageName)))
             } catch (e: Exception) {

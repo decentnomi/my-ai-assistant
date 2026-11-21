@@ -5,15 +5,16 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.text.InputType
+import android.util.Base64
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -22,8 +23,11 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
@@ -36,21 +40,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var youView: TextView
     private lateinit var replyView: TextView
     private lateinit var actions: PhoneActions
-    private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
-    private var langCode = "ur-PK"
     private var busy = false
     private val prefs by lazy { getSharedPreferences("assistant", Context.MODE_PRIVATE) }
 
     private val systemPrompt = """
-Tum ek phone assistant ho. User ki baat (Urdu, English ya Roman Urdu) ko sirf ek JSON object ma badlo, aur kuch nahi likho.
+Tumhara naam Hello Nomi hai. Tum ek phone assistant ho. User ki awaz kisi bhi zubaan ma ho sakti hai (Urdu, Punjabi, English, Hindi, Chinese, Arabic, Pashto, Sindhi waghera). Uska hukm samajh kar sirf ek JSON object do, aur kuch nahi.
+Har JSON ma "heard" (user ne jo kaha, usi zubaan ma chhota text) aur "lang" (user ki zubaan ka code, jaise ur-PK, pa-IN, en-US, zh-CN) zaroor shamil karo.
 Naam hamesha English letters ma likho. Mumkin actions:
 {"action":"call","name":"Ali"}
-{"action":"whatsapp","name":"Ali","message":"user ki taraf se chhota, qudrati message, Roman Urdu ma, main ke andaz ma"}
-{"action":"sms","name":"Ali","message":"user ki taraf se chhota message, Roman Urdu ma"}
+{"action":"whatsapp","name":"Ali","message":"user ki taraf se chhota, qudrati message (Urdu ya Punjabi ho to Roman Urdu ma, warna user ki zubaan ma), main ke andaz ma"}
+{"action":"sms","name":"Ali","message":"user ki taraf se chhota message"}
 {"action":"open_app","app":"YouTube"}
 {"action":"toggle","target":"wifi|bluetooth|mobile_data|airplane|hotspot|location|flashlight|rotate|dnd|nfc","on":true}
-{"action":"brightness","level":0 se 100}
+{"action":"brightness","level":0 se 100} ya {"action":"brightness","dir":"up|down"}
 {"action":"volume","level":0 se 100} ya {"action":"volume","dir":"up|down|mute"}
 {"action":"ringer","mode":"silent|vibrate|normal"}
 {"action":"media","cmd":"play|pause|next|previous"}
@@ -62,7 +65,7 @@ Naam hamesha English letters ma likho. Mumkin actions:
 {"action":"search","query":"..."}
 {"action":"maps","query":"..."}
 {"action":"camera"}
-{"action":"chat","reply":"Roman Urdu ma 1 se 3 jumlon ka mukhtasir jawab"}   (baqi har baat ke liye)
+{"action":"chat","reply":"user ki apni zubaan ma 1 se 2 jumlon ka mukhtasir jawab"}   (baqi har baat ke liye)
 """
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +76,10 @@ Naam hamesha English letters ma likho. Mumkin actions:
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setPadding(pad, pad * 2, pad, pad)
+
+        val title = TextView(this)
+        title.text = "Hello Nomi"
+        title.textSize = 28f
 
         keyBox = EditText(this)
         keyBox.hint = "Gemini API key yahan paste karen"
@@ -113,22 +120,10 @@ Naam hamesha English letters ma likho. Mumkin actions:
             prefs.edit().putBoolean("autolisten", checked).apply()
         }
 
-        val langBtn = Button(this)
-        langBtn.text = "Zubaan: Urdu (tap karke badlen)"
-        langBtn.setOnClickListener {
-            if (langCode == "ur-PK") {
-                langCode = "en-US"
-                langBtn.text = "Zubaan: English (tap karke badlen)"
-            } else {
-                langCode = "ur-PK"
-                langBtn.text = "Zubaan: Urdu (tap karke badlen)"
-            }
-        }
-
         val micBtn = Button(this)
         micBtn.text = "BOLEN"
         micBtn.textSize = 22f
-        micBtn.setOnClickListener { startListening() }
+        micBtn.setOnClickListener { startRecording() }
 
         statusView = TextView(this)
         statusView.textSize = 16f
@@ -137,13 +132,13 @@ Naam hamesha English letters ma likho. Mumkin actions:
         replyView = TextView(this)
         replyView.textSize = 18f
 
+        root.addView(title)
         root.addView(keyBox)
         root.addView(modelBox)
         root.addView(saveBtn)
         root.addView(accBtn)
         root.addView(autoSend)
         root.addView(autoListen)
-        root.addView(langBtn)
         root.addView(micBtn)
         root.addView(statusView)
         root.addView(youView)
@@ -177,7 +172,7 @@ Naam hamesha English letters ma likho. Mumkin actions:
         if (autoListen.isChecked &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         ) {
-            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700L)
+            Handler(Looper.getMainLooper()).postDelayed({ startRecording() }, 700L)
         }
     }
 
@@ -187,13 +182,24 @@ Naam hamesha English letters ma likho. Mumkin actions:
         }
     }
 
-    private fun speak(text: String) {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "reply")
+    private fun speak(text: String, lang: String) {
+        val t = tts ?: return
+        val loc = if (lang.isBlank()) Locale("en", "IN") else Locale.forLanguageTag(lang)
+        val r = t.setLanguage(loc)
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            t.setLanguage(Locale("en", "IN"))
+        }
+        t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "reply")
     }
 
     private fun say(text: String) {
         replyView.text = "Assistant: " + text
-        speak(text)
+        speak(text, "en-IN")
+    }
+
+    private fun sayLang(text: String, lang: String) {
+        replyView.text = "Assistant: " + text
+        speak(text, lang)
     }
 
     override fun onRequestPermissionsResult(
@@ -205,96 +211,172 @@ Naam hamesha English letters ma likho. Mumkin actions:
         statusView.text = "Ijazat check ho gayi. Ab BOLEN dabayen."
     }
 
-    private fun startListening() {
+    private fun startRecording() {
         if (busy) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
             return
         }
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            statusView.text = "Is phone ma speech recognition nahi mili"
-            return
-        }
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this)
-        recognizer?.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
-            override fun onPartialResults(partialResults: Bundle?) {}
-            override fun onEvent(eventType: Int, params: Bundle?) {}
-            override fun onError(error: Int) {
-                statusView.text = "Samajh nahi aaya (error " + error + "). Dobara BOLEN dabayen."
-            }
-            override fun onResults(results: Bundle?) {
-                val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val said = list?.firstOrNull()
-                if (said == null) {
-                    statusView.text = "Kuch sunai nahi diya"
-                } else {
-                    youView.text = "Aap: " + said
-                    askGemini(said)
-                }
-            }
-        })
-        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, langCode)
-        recognizer?.startListening(i)
-        statusView.text = "Sun raha hoon... bolen"
-    }
-
-    private fun askGemini(question: String) {
         val key = prefs.getString("key", "") ?: ""
-        val model = prefs.getString("model", "gemini-flash-latest") ?: "gemini-flash-latest"
         if (key.isBlank()) {
             statusView.text = "Pehle upar key paste karke Save karen"
             return
         }
         busy = true
-        statusView.text = "Soch raha hoon..."
+        tts?.stop()
+        statusView.text = "Sun raha hoon... bolen"
         Thread {
-            var ok = false
-            val answer = try {
-                val url = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
-                val c = url.openConnection() as HttpURLConnection
-                c.requestMethod = "POST"
-                c.setRequestProperty("Content-Type", "application/json")
-                c.setRequestProperty("x-goog-api-key", key)
-                c.connectTimeout = 20000
-                c.readTimeout = 40000
-                c.doOutput = true
-                val body = JSONObject()
-                body.put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
-                body.put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", question)))))
-                body.put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
-                c.outputStream.use { it.write(body.toString().toByteArray()) }
-                val code = c.responseCode
-                val stream = if (code in 200..299) c.inputStream else c.errorStream
-                val text = stream.bufferedReader().readText()
-                if (code in 200..299) {
-                    ok = true
-                    JSONObject(text).getJSONArray("candidates").getJSONObject(0)
-                        .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
-                } else {
-                    "Gemini error " + code + ": " + text.take(300)
+            val wav = recordUtterance()
+            if (wav == null) {
+                runOnUiThread {
+                    busy = false
+                    statusView.text = "Kuch sunai nahi diya. Dobara BOLEN dabayen."
                 }
-            } catch (e: Exception) {
-                "Masla: " + e.message
-            }
-            runOnUiThread {
-                busy = false
-                if (ok) {
-                    statusView.text = "Jawab aa gaya"
-                    handleReply(answer)
-                } else {
-                    statusView.text = "Masla aaya"
-                    replyView.text = "Assistant: " + answer
-                }
+            } else {
+                runOnUiThread { statusView.text = "Samajh raha hoon..." }
+                sendToGemini(wav)
             }
         }.start()
+    }
+
+    private fun recordUtterance(): ByteArray? {
+        val rate = 16000
+        val minBuf = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (minBuf <= 0) return null
+        val rec = AudioRecord(
+            MediaRecorder.AudioSource.MIC,
+            rate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            maxOf(minBuf, rate) * 2
+        )
+        if (rec.state != AudioRecord.STATE_INITIALIZED) {
+            rec.release()
+            return null
+        }
+        val pcm = ByteArrayOutputStream()
+        val buf = ShortArray(rate / 10)
+        val bytes = ByteArray(buf.size * 2)
+        var spoke = false
+        var silentMs = 0
+        var totalMs = 0
+        var maxPeak = 0
+        rec.startRecording()
+        while (true) {
+            val n = rec.read(buf, 0, buf.size)
+            if (n <= 0) break
+            var peak = 0
+            for (i in 0 until n) {
+                val s = buf[i].toInt()
+                bytes[2 * i] = (s and 0xFF).toByte()
+                bytes[2 * i + 1] = ((s shr 8) and 0xFF).toByte()
+                val a = if (s < 0) -s else s
+                if (a > peak) peak = a
+            }
+            pcm.write(bytes, 0, n * 2)
+            val ms = n * 1000 / rate
+            totalMs += ms
+            if (peak > maxPeak) maxPeak = peak
+            val loud = peak > maxOf(1000, maxPeak / 5)
+            if (loud) {
+                spoke = true
+                silentMs = 0
+            } else if (spoke) {
+                silentMs += ms
+            }
+            if (spoke && silentMs >= 900) break
+            if (!spoke && totalMs >= 6000) break
+            if (totalMs >= 12000) break
+        }
+        try {
+            rec.stop()
+        } catch (e: Exception) {
+        }
+        rec.release()
+        return if (spoke) wavWrap(pcm.toByteArray(), rate) else null
+    }
+
+    private fun wavWrap(pcm: ByteArray, rate: Int): ByteArray {
+        val h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        h.put("RIFF".toByteArray())
+        h.putInt(pcm.size + 36)
+        h.put("WAVE".toByteArray())
+        h.put("fmt ".toByteArray())
+        h.putInt(16)
+        h.putShort(1)
+        h.putShort(1)
+        h.putInt(rate)
+        h.putInt(rate * 2)
+        h.putShort(2)
+        h.putShort(16)
+        h.put("data".toByteArray())
+        h.putInt(pcm.size)
+        return h.array() + pcm
+    }
+
+    private fun callGemini(key: String, model: String, audioB64: String, thinkingOff: Boolean): Pair<Int, String> {
+        return try {
+            val url = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
+            val c = url.openConnection() as HttpURLConnection
+            c.requestMethod = "POST"
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("x-goog-api-key", key)
+            c.connectTimeout = 20000
+            c.readTimeout = 40000
+            c.doOutput = true
+            val body = JSONObject()
+            body.put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt))))
+            val audioPart = JSONObject().put(
+                "inlineData",
+                JSONObject().put("mimeType", "audio/wav").put("data", audioB64)
+            )
+            val textPart = JSONObject().put("text", "Ye user ki awaz hai. Hukm samajh kar sirf JSON do.")
+            val parts = JSONArray().put(audioPart).put(textPart)
+            body.put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", parts)))
+            val gen = JSONObject().put("responseMimeType", "application/json")
+            if (thinkingOff) {
+                gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+            }
+            body.put("generationConfig", gen)
+            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            val code = c.responseCode
+            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            Pair(code, stream.bufferedReader().readText())
+        } catch (e: Exception) {
+            Pair(-1, "Masla: " + e.message)
+        }
+    }
+
+    private fun extractText(body: String): String? {
+        return try {
+            JSONObject(body).getJSONArray("candidates").getJSONObject(0)
+                .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun sendToGemini(wav: ByteArray) {
+        val key = prefs.getString("key", "") ?: ""
+        val model = prefs.getString("model", "gemini-flash-latest") ?: "gemini-flash-latest"
+        val b64 = Base64.encodeToString(wav, Base64.NO_WRAP)
+        var res = callGemini(key, model, b64, true)
+        if (res.first == 400) {
+            res = callGemini(key, model, b64, false)
+        }
+        val code = res.first
+        val body = res.second
+        runOnUiThread {
+            busy = false
+            val text = if (code in 200..299) extractText(body) else null
+            if (text != null) {
+                statusView.text = "Jawab aa gaya"
+                handleReply(text)
+            } else {
+                statusView.text = "Masla aaya"
+                replyView.text = "Assistant: Gemini error " + code + ": " + body.take(300)
+            }
+        }
     }
 
     private fun handleReply(raw: String) {
@@ -305,6 +387,11 @@ Naam hamesha English letters ma likho. Mumkin actions:
             say(clean)
             return
         }
+        val heard = j.optString("heard")
+        if (heard.isNotBlank()) {
+            youView.text = "Aap: " + heard
+        }
+        val lang = j.optString("lang")
         val action = j.optString("action", "chat")
         when (action) {
             "call" -> actions.call(j.optString("name"))
@@ -312,7 +399,7 @@ Naam hamesha English letters ma likho. Mumkin actions:
             "sms" -> actions.sms(j.optString("name"), j.optString("message"))
             "open_app" -> actions.openApp(j.optString("app"))
             "toggle" -> actions.toggle(j.optString("target"), j.optBoolean("on", true))
-            "brightness" -> actions.brightness(j.optInt("level", 50))
+            "brightness" -> BrightnessHelper.set(this, j.optInt("level", -1), j.optString("dir")) { t -> say(t) }
             "volume" -> actions.volume(j.optInt("level", -1), j.optString("dir"))
             "ringer" -> actions.ringer(j.optString("mode"))
             "media" -> actions.media(j.optString("cmd"))
@@ -324,12 +411,11 @@ Naam hamesha English letters ma likho. Mumkin actions:
             "search" -> actions.search(j.optString("query"))
             "maps" -> actions.maps(j.optString("query"))
             "camera" -> actions.camera()
-            else -> say(j.optString("reply", clean))
+            else -> sayLang(j.optString("reply", clean), lang)
         }
     }
 
     override fun onDestroy() {
-        recognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()
     }
