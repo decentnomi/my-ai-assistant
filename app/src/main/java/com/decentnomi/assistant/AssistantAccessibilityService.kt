@@ -2,6 +2,7 @@ package com.decentnomi.assistant
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -10,18 +11,14 @@ import android.view.accessibility.AccessibilityNodeInfo
 class AssistantAccessibilityService : AccessibilityService() {
 
     companion object {
-        @Volatile
-        var pendingUntil: Long = 0L
-
-        @Volatile
-        var instance: AssistantAccessibilityService? = null
-
+        @Volatile var pendingUntil: Long = 0L
+        @Volatile var instance: AssistantAccessibilityService? = null
         fun arm() {
             pendingUntil = System.currentTimeMillis() + 20000L
         }
     }
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val h = Handler(Looper.getMainLooper())
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -33,89 +30,83 @@ class AssistantAccessibilityService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
-    override fun onDestroy() {
-        instance = null
-        super.onDestroy()
-    }
+    override fun onInterrupt() {}
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (System.currentTimeMillis() > pendingUntil) return
-        val root = rootInActiveWindow ?: return
-        val pkg = root.packageName?.toString() ?: return
-        if (pkg != "com.whatsapp" && pkg != "com.whatsapp.w4b") return
-
-        var targets: List<AccessibilityNodeInfo>? = root.findAccessibilityNodeInfosByViewId(pkg + ":id/send")
-        var viaText = false
-        if (targets.isNullOrEmpty()) {
-            targets = root.findAccessibilityNodeInfosByText("Send")
-            viaText = true
-        }
-        for (node in targets.orEmpty()) {
-            if (viaText && node.contentDescription?.toString().equals("Send", ignoreCase = true).not()) continue
-            var n: AccessibilityNodeInfo? = node
-            while (n != null && !n.isClickable) {
-                n = n.parent
-            }
-            if (n != null && n.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                pendingUntil = 0L
-                return
-            }
-        }
+        if (clickSendNow()) pendingUntil = 0L
     }
 
-    override fun onInterrupt() {}
+    private fun clickableAncestor(n: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+        var x = n
+        var d = 0
+        while (x != null && d < 6) {
+            if (x.isClickable) return x
+            x = x.parent
+            d++
+        }
+        return null
+    }
+
+    fun clickSendNow(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val pkg = root.packageName?.toString() ?: return false
+        if (!pkg.startsWith("com.whatsapp")) return false
+        var nodes: List<AccessibilityNodeInfo>? = root.findAccessibilityNodeInfosByViewId(pkg + ":id/send")
+        if (nodes.isNullOrEmpty()) {
+            val byText: List<AccessibilityNodeInfo>? = root.findAccessibilityNodeInfosByText("Send")
+            nodes = byText?.filter {
+                it.contentDescription?.toString().equals("Send", true) || it.text?.toString().equals("Send", true)
+            }
+        }
+        val target = nodes?.firstOrNull() ?: return false
+        val btn = clickableAncestor(target) ?: return false
+        return btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
 
     fun globalAction(cmd: String): Boolean {
-        val code = when (cmd) {
-            "home" -> GLOBAL_ACTION_HOME
-            "back" -> GLOBAL_ACTION_BACK
-            "recents" -> GLOBAL_ACTION_RECENTS
-            "notifications" -> GLOBAL_ACTION_NOTIFICATIONS
-            "quick_settings" -> GLOBAL_ACTION_QUICK_SETTINGS
-            "screenshot" -> GLOBAL_ACTION_TAKE_SCREENSHOT
-            "lock" -> GLOBAL_ACTION_LOCK_SCREEN
-            "power_menu" -> GLOBAL_ACTION_POWER_DIALOG
-            else -> return false
+        return when (cmd.lowercase()) {
+            "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
+            "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
+            "recents" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            "notifications" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            "quick_settings" -> performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+            "power_menu" -> performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
+            "lock" -> if (Build.VERSION.SDK_INT >= 28) performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) else false
+            "screenshot" -> if (Build.VERSION.SDK_INT >= 28) performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT) else false
+            else -> false
         }
-        return performGlobalAction(code)
     }
 
     fun toggleTile(labels: List<String>, desiredOn: Boolean) {
-        if (!performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)) return
-        handler.postDelayed({
+        performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+        h.postDelayed({
             val roots = ArrayList<AccessibilityNodeInfo>()
-            val wins = windows
-            if (wins != null) {
-                for (w in wins) {
+            try {
+                for (w in windows) {
                     val r = w.root
                     if (r != null) roots.add(r)
                 }
+            } catch (e: Exception) {
             }
             val active = rootInActiveWindow
             if (active != null) roots.add(active)
-            var clicked = false
+            var done = false
             for (r in roots) {
-                if (clicked) break
-                for (label in labels) {
-                    if (clicked) break
-                    val nodes = r.findAccessibilityNodeInfosByText(label)
-                    if (nodes == null) continue
-                    for (node in nodes) {
-                        var n: AccessibilityNodeInfo? = node
-                        while (n != null && !n.isClickable) {
-                            n = n.parent
-                        }
-                        if (n == null) continue
-                        val already = n.isCheckable && n.isChecked == desiredOn
-                        if (!already) {
-                            n.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        }
-                        clicked = true
+                if (done) break
+                for (l in labels) {
+                    val found: List<AccessibilityNodeInfo>? = r.findAccessibilityNodeInfosByText(l)
+                    if (found.isNullOrEmpty()) continue
+                    val tile = clickableAncestor(found[0])
+                    if (tile != null) {
+                        val already = tile.isCheckable && tile.isChecked == desiredOn
+                        if (!already) tile.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        done = true
                         break
                     }
                 }
             }
-            handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 700L)
+            h.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 700L)
         }, 1200L)
     }
 }
