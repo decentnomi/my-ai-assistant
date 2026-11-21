@@ -5,9 +5,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
-import android.provider.ContactsContract
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -31,9 +31,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var keyBox: EditText
     private lateinit var modelBox: EditText
     private lateinit var autoSend: CheckBox
+    private lateinit var autoListen: CheckBox
     private lateinit var statusView: TextView
     private lateinit var youView: TextView
     private lateinit var replyView: TextView
+    private lateinit var actions: PhoneActions
     private var recognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var langCode = "ur-PK"
@@ -41,12 +43,26 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private val prefs by lazy { getSharedPreferences("assistant", Context.MODE_PRIVATE) }
 
     private val systemPrompt = """
-Tum ek phone assistant ho. User ki baat (Urdu, English ya Roman Urdu) ko sirf ek JSON ma badlo, aur kuch nahi likho.
-Formats:
-{"action":"call","name":"<contact ka naam English letters ma>"} jab user kisi ko call karna chahe.
-{"action":"whatsapp","name":"<contact ka naam English letters ma>","message":"<user ki taraf se likha hua chhota, qudrati message, Roman Urdu ma, 'main' ke andaz ma>"} jab user kisi ko WhatsApp par message bhejna chahe.
-{"action":"open_app","app":"<app ka naam English ma, jaise WhatsApp, YouTube, Chrome>"} jab user koi app kholna chahe.
-{"action":"chat","reply":"<Roman Urdu ma 1 se 3 jumlon ka mukhtasir jawab>"} baqi har baat ke liye.
+Tum ek phone assistant ho. User ki baat (Urdu, English ya Roman Urdu) ko sirf ek JSON object ma badlo, aur kuch nahi likho.
+Naam hamesha English letters ma likho. Mumkin actions:
+{"action":"call","name":"Ali"}
+{"action":"whatsapp","name":"Ali","message":"user ki taraf se chhota, qudrati message, Roman Urdu ma, main ke andaz ma"}
+{"action":"sms","name":"Ali","message":"user ki taraf se chhota message, Roman Urdu ma"}
+{"action":"open_app","app":"YouTube"}
+{"action":"toggle","target":"wifi|bluetooth|mobile_data|airplane|hotspot|location|flashlight|rotate|dnd|nfc","on":true}
+{"action":"brightness","level":0 se 100}
+{"action":"volume","level":0 se 100} ya {"action":"volume","dir":"up|down|mute"}
+{"action":"ringer","mode":"silent|vibrate|normal"}
+{"action":"media","cmd":"play|pause|next|previous"}
+{"action":"alarm","hour":0 se 23,"minute":0 se 59}
+{"action":"timer","seconds":300}   (agar user "X minute baad" kahe to timer use karo)
+{"action":"system","cmd":"home|back|recents|notifications|screenshot|lock|power_menu"}
+{"action":"settings","target":"wifi|bluetooth|display|sound|battery|location|apps|airplane|data|nfc|date|main"}
+{"action":"info","kind":"battery|time"}
+{"action":"search","query":"..."}
+{"action":"maps","query":"..."}
+{"action":"camera"}
+{"action":"chat","reply":"Roman Urdu ma 1 se 3 jumlon ka mukhtasir jawab"}   (baqi har baat ke liye)
 """
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +101,17 @@ Formats:
 
         autoSend = CheckBox(this)
         autoSend.text = "WhatsApp message khud send karen"
-        autoSend.isChecked = true
+        autoSend.isChecked = prefs.getBoolean("autosend", true)
+        autoSend.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("autosend", checked).apply()
+        }
+
+        autoListen = CheckBox(this)
+        autoListen.text = "Mode A: app khulte hi khud sunna shuru karen"
+        autoListen.isChecked = prefs.getBoolean("autolisten", false)
+        autoListen.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("autolisten", checked).apply()
+        }
 
         val langBtn = Button(this)
         langBtn.text = "Zubaan: Urdu (tap karke badlen)"
@@ -116,6 +142,7 @@ Formats:
         root.addView(saveBtn)
         root.addView(accBtn)
         root.addView(autoSend)
+        root.addView(autoListen)
         root.addView(langBtn)
         root.addView(micBtn)
         root.addView(statusView)
@@ -126,13 +153,31 @@ Formats:
         scroll.addView(root)
         setContentView(scroll)
 
+        actions = PhoneActions(this) { text -> say(text) }
+
         val need = arrayOf(
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.READ_CONTACTS,
-            Manifest.permission.CALL_PHONE
+            Manifest.permission.CALL_PHONE,
+            Manifest.permission.SEND_SMS
         ).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (need.isNotEmpty()) {
             requestPermissions(need.toTypedArray(), 1)
+        } else {
+            maybeAutoListen()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        maybeAutoListen()
+    }
+
+    private fun maybeAutoListen() {
+        if (autoListen.isChecked &&
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        ) {
+            Handler(Looper.getMainLooper()).postDelayed({ startListening() }, 700L)
         }
     }
 
@@ -256,124 +301,31 @@ Formats:
         val fence = "\u0060\u0060\u0060"
         val clean = raw.trim().removePrefix(fence + "json").removePrefix(fence).removeSuffix(fence).trim()
         val j = try { JSONObject(clean) } catch (e: Exception) { null }
-        val action = j?.optString("action", "chat") ?: "chat"
-        if (action == "call") {
-            doCall(j?.optString("name") ?: "")
-        } else if (action == "whatsapp") {
-            doWhatsApp(j?.optString("name") ?: "", j?.optString("message") ?: "")
-        } else if (action == "open_app") {
-            doOpenApp(j?.optString("app") ?: "")
-        } else {
-            say(j?.optString("reply", clean) ?: clean)
-        }
-    }
-
-    private fun findContact(name: String): Pair<String, String>? {
-        val phone = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-        val cols = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
-        )
-        val sel = ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?"
-        val cursor = contentResolver.query(phone, cols, sel, arrayOf("%" + name + "%"), null)
-        val list = ArrayList<Pair<String, String>>()
-        cursor?.use {
-            while (it.moveToNext()) {
-                list.add(Pair(it.getString(0) ?: "", it.getString(1) ?: ""))
-            }
-        }
-        return list.firstOrNull { it.first.equals(name, ignoreCase = true) }
-            ?: list.firstOrNull { it.first.startsWith(name, ignoreCase = true) }
-            ?: list.firstOrNull()
-    }
-
-    private fun normalizeNumber(raw: String): String {
-        var d = raw.filter { it.isDigit() }
-        if (d.startsWith("00")) {
-            d = d.substring(2)
-        } else if (d.startsWith("0")) {
-            d = "92" + d.substring(1)
-        }
-        return d
-    }
-
-    private fun doCall(name: String) {
-        if (name.isBlank()) {
-            say("Naam samajh nahi aaya")
+        if (j == null) {
+            say(clean)
             return
         }
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED ||
-            checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED
-        ) {
-            say("Contacts aur Phone ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
-            return
+        val action = j.optString("action", "chat")
+        when (action) {
+            "call" -> actions.call(j.optString("name"))
+            "whatsapp" -> actions.whatsapp(j.optString("name"), j.optString("message"), autoSend.isChecked)
+            "sms" -> actions.sms(j.optString("name"), j.optString("message"))
+            "open_app" -> actions.openApp(j.optString("app"))
+            "toggle" -> actions.toggle(j.optString("target"), j.optBoolean("on", true))
+            "brightness" -> actions.brightness(j.optInt("level", 50))
+            "volume" -> actions.volume(j.optInt("level", -1), j.optString("dir"))
+            "ringer" -> actions.ringer(j.optString("mode"))
+            "media" -> actions.media(j.optString("cmd"))
+            "alarm" -> actions.alarm(j.optInt("hour", 0), j.optInt("minute", 0))
+            "timer" -> actions.timer(j.optInt("seconds", 60))
+            "system" -> actions.system(j.optString("cmd"))
+            "settings" -> actions.settings(j.optString("target"))
+            "info" -> actions.info(j.optString("kind"))
+            "search" -> actions.search(j.optString("query"))
+            "maps" -> actions.maps(j.optString("query"))
+            "camera" -> actions.camera()
+            else -> say(j.optString("reply", clean))
         }
-        val found = findContact(name)
-        if (found == null) {
-            say("Contact " + name + " nahi mila")
-            return
-        }
-        say(found.first + " ko call laga raha hoon")
-        try {
-            startActivity(Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(found.second))))
-        } catch (e: Exception) {
-            say("Call nahi lag saki: " + e.message)
-        }
-    }
-
-    private fun doWhatsApp(name: String, message: String) {
-        if (name.isBlank() || message.isBlank()) {
-            say("Naam ya message samajh nahi aaya")
-            return
-        }
-        if (checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            say("Contacts ki ijazat dein (Settings, Apps, My AI Assistant, Permissions)")
-            return
-        }
-        val found = findContact(name)
-        if (found == null) {
-            say("Contact " + name + " nahi mila")
-            return
-        }
-        val number = normalizeNumber(found.second)
-        val uri = Uri.parse("https://wa.me/" + number + "?text=" + Uri.encode(message))
-        say(found.first + " ko WhatsApp par likh raha hoon: " + message)
-        if (autoSend.isChecked) {
-            AssistantAccessibilityService.arm()
-        }
-        var opened = false
-        for (pkg in arrayOf("com.whatsapp", "com.whatsapp.w4b")) {
-            if (opened) break
-            try {
-                val i = Intent(Intent.ACTION_VIEW, uri)
-                i.setPackage(pkg)
-                startActivity(i)
-                opened = true
-            } catch (e: Exception) {
-            }
-        }
-        if (!opened) {
-            say("WhatsApp nahi mili")
-        }
-    }
-
-    private fun doOpenApp(app: String) {
-        if (app.isBlank()) {
-            say("App ka naam samajh nahi aaya")
-            return
-        }
-        val pm = packageManager
-        val main = Intent(Intent.ACTION_MAIN, null)
-        main.addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = pm.queryIntentActivities(main, 0)
-        val match = apps.firstOrNull { it.loadLabel(pm).toString().contains(app, ignoreCase = true) }
-        val launch = if (match != null) pm.getLaunchIntentForPackage(match.activityInfo.packageName) else null
-        if (launch == null) {
-            say(app + " app nahi mili")
-            return
-        }
-        say(app + " khol raha hoon")
-        startActivity(launch)
     }
 
     override fun onDestroy() {
