@@ -18,6 +18,11 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <application
         android:label="Hello Nomi"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -42,5 +47,6 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
         </service>
+        <service android:name="com.decentnomi.assistant.WakeService" android:exported="false" android:foregroundServiceType="microphone" />
     </application>
 </manifest>

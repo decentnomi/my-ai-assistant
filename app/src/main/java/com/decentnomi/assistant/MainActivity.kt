@@ -139,6 +139,7 @@ Naam hamesha English letters ma likho. Mumkin actions:
         root.addView(accBtn)
         root.addView(autoSend)
         root.addView(autoListen)
+        WakeUi.add(this, root)
         root.addView(micBtn)
         root.addView(statusView)
         root.addView(youView)
@@ -165,11 +166,14 @@ Naam hamesha English letters ma likho. Mumkin actions:
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        setIntent(intent)
         maybeAutoListen()
     }
 
     private fun maybeAutoListen() {
-        if (autoListen.isChecked &&
+        val wakeFlag = intent?.getBooleanExtra("wake", false) == true
+        intent?.removeExtra("wake")
+        if ((autoListen.isChecked || wakeFlag) &&
             checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         ) {
             Handler(Looper.getMainLooper()).postDelayed({ startRecording() }, 700L)
