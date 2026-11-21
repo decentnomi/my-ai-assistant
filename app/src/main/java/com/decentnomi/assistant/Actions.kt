@@ -114,7 +114,7 @@ class Actions(private val c: Context) {
                 best = ri
             }
         }
-        val b = best ?: return "App " + name + " nahi mili"
+        val b = best ?: return Fuzzy.fallback(c, name)
         val li = pm.getLaunchIntentForPackage(b.activityInfo.packageName) ?: return "App " + name + " nahi khul saki"
         return go(li)
     }

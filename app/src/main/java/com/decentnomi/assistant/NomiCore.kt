@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-data class Reply(val display: String, val speak: String, val lang: String)
+data class Reply(val display: String, val speak: String, val lang: String, val voice: Boolean = true)
 
 object ChatLog {
     val lines = ArrayList<String>()
@@ -180,9 +180,9 @@ Yaad rakho: "screen off", "screen band", "phone lock", "display band" ka matlab 
             return Reply(q, q, "en-IN")
         }
         val out = exec(j, a, p, false)
-        if (out != null) return Reply(out, out, "en-IN")
+        if (out != null) return Reply(out, out, "en-IN", action == "info" || !(out.startsWith("Brightness ") && out.length > 11 && out[11].isDigit()))
         val shown = reply.ifBlank { "Theek hai" }
-        return Reply(shown, say.ifBlank { shown }, lang)
+        return Reply(shown, say.ifBlank { shown }, lang, action == "chat")
     }
 
     private val yes = setOf(

@@ -31,7 +31,12 @@ object FastPath {
 
     private fun done(err: String?, ok: String): Reply {
         val m = err ?: ok
-        return Reply(m, m, "en-IN")
+        return Reply(m, m, "en-IN", err != null)
+    }
+
+    private fun brt(res: String?, ok: String): Reply {
+        if (res != null && res.startsWith("Brightness ") && res.length > 11 && res[11].isDigit()) return Reply(res, res, "en-IN", false)
+        return done(res, ok)
     }
 
     fun run(text: String, a: Actions): Reply? {
@@ -56,9 +61,9 @@ object FastPath {
         }
 
         if (any("brightness", "ब्राइटनेस", "برائٹنیس")) {
-            if (full) return done(a.brightness(100, ""), "Brightness full")
-            if (down) return done(a.brightness(-1, "down"), "Brightness kam")
-            if (up) return done(a.brightness(-1, "up"), "Brightness zyada")
+            if (full) return brt(a.brightness(100, ""), "Brightness full")
+            if (down) return brt(a.brightness(-1, "down"), "Brightness kam")
+            if (up) return brt(a.brightness(-1, "up"), "Brightness zyada")
             return null
         }
 
@@ -103,11 +108,11 @@ object FastPath {
                 }
             }
             if (name.isBlank()) {
-                name = toks.filter { it !in openW && it !in filler && it.all { c -> c.code < 128 } }.joinToString(" ")
+                name = toks.filter { it !in openW && it !in filler }.joinToString(" ")
             }
             if (name.isBlank()) return null
             val err = a.openApp(name)
-            if (err == null) return Reply("Theek hai, " + name + " khol rahi hoon", "Theek hai, " + name + " khol rahi hoon", "en-IN")
+            if (err == null) return Reply("Theek hai, " + name + " khol rahi hoon", "Theek hai, " + name + " khol rahi hoon", "en-IN", false)
             if (err.startsWith("App ")) return null
             return Reply(err, err, "en-IN")
         }

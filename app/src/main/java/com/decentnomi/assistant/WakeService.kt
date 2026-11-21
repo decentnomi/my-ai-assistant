@@ -139,6 +139,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
             sr?.startListening(i)
             setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "suna: " + lastHeard + "  |  Decent bolen")
@@ -233,7 +234,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
                         deliver(Reply("Jawab samajh nahi aaya", "Jawab samajh nahi aaya", "en-IN"))
                     }
                 } else {
-                    deliver(Reply("Gemini error " + res.first + ": " + res.second.take(150), "Gemini ma masla aaya", "en-IN"))
+                    deliver(if (res.first == -1) Reply("Internet nahi hai. Abhi sirf basic hukm chalenge.", "Internet nahi hai. Abhi sirf basic hukm chalenge.", "en-IN") else Reply("Gemini error " + res.first + ": " + res.second.take(150), "Gemini ma masla aaya", "en-IN"))
                 }
             }
         }.start()
@@ -241,7 +242,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
 
     private fun deliver(r: Reply) {
         ChatLog.add(false, r.display)
-        speak(r.speak, r.lang, r.display)
+        if (r.voice) speak(r.speak, r.lang, r.display) else resume()
     }
 
     private fun speak(text: String, lang: String, alt: String) {
