@@ -139,7 +139,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 1000L)
+            i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
             sr?.startListening(i)
             setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "suna: " + lastHeard + "  |  Decent bolen")
         } catch (e: Exception) {
@@ -209,6 +209,11 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         val pr = NomiCore.tryPending(text, actions, prefs)
         if (pr != null) {
             deliver(pr)
+            return
+        }
+        val fp = FastPath.run(text, actions)
+        if (fp != null) {
+            deliver(fp)
             return
         }
         val key = prefs.getString("key", "") ?: ""

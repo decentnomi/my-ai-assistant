@@ -48,6 +48,7 @@ Har JSON ma "reply", "say", "lang" zaroor hon. Agar hukm adhoora ho (message ka 
 {"action":"alarm","hour":0 se 23,"minute":0 se 59}
 {"action":"timer","seconds":300}
 {"action":"system","cmd":"home|back|recents|notifications|screenshot|lock|power_menu"}
+Yaad rakho: "screen off", "screen band", "phone lock", "display band" ka matlab system lock hai: {"action":"system","cmd":"lock"}. "display settings" sirf tab jab user settings maange.
 {"action":"settings","target":"wifi|bluetooth|display|sound|battery|location|apps|airplane|data|nfc|date|main"}
 {"action":"info","kind":"battery|time"}
 {"action":"search","query":"..."}
@@ -76,7 +77,7 @@ Har JSON ma "reply", "say", "lang" zaroor hon. Agar hukm adhoora ho (message ka 
     fun remember(user: String, modelRaw: String) {
         hist.add(Pair("user", user))
         hist.add(Pair("model", modelRaw))
-        while (hist.size > 10) {
+        while (hist.size > 6) {
             hist.removeAt(0)
             hist.removeAt(0)
         }
@@ -100,7 +101,7 @@ Har JSON ma "reply", "say", "lang" zaroor hon. Agar hukm adhoora ho (message ka 
             }
             contents.put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", text))))
             body.put("contents", contents)
-            val gen = JSONObject().put("responseMimeType", "application/json").put("temperature", 0.5)
+            val gen = JSONObject().put("responseMimeType", "application/json").put("temperature", 0.5).put("maxOutputTokens", 400)
             if (thinkingOff) gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
             body.put("generationConfig", gen)
             c.outputStream.use { it.write(body.toString().toByteArray()) }
