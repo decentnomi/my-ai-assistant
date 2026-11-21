@@ -117,9 +117,14 @@ Har JSON ma "reply", "say", "lang" zaroor hon. Agar hukm adhoora ho (message ka 
         val model = (p.getString("model", "gemini-flash-lite-latest") ?: "gemini-flash-lite-latest").ifBlank { "gemini-flash-lite-latest" }
         var r = call(key, model, text, true, p)
         if (r.first == 400) r = call(key, model, text, false, p)
-        if (r.first == 404 && model != "gemini-flash-latest") {
+        if ((r.first == 404 || r.first == 503 || r.first == 429 || r.first == 500) && model != "gemini-flash-latest") {
             r = call(key, "gemini-flash-latest", text, true, p)
             if (r.first == 400) r = call(key, "gemini-flash-latest", text, false, p)
+        }
+        if ((r.first == 404 || r.first == 503 || r.first == 429 || r.first == 500) && model != "gemini-2.5-flash") {
+            Thread.sleep(600)
+            r = call(key, "gemini-2.5-flash", text, true, p)
+            if (r.first == 400) r = call(key, "gemini-2.5-flash", text, false, p)
         }
         return r
     }
