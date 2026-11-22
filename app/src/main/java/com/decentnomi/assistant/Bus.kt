@@ -16,7 +16,7 @@ object Bus {
     private val fmt = SimpleDateFormat("HH:mm:ss", Locale.US)
 
     fun add(s: String) {
-        lines.add(fmt.format(Date()) + "  " + s)
+        lines.add(fmt.format(Date()) + "  " + Roman.of(s))
         while (lines.size > 40) lines.removeAt(0)
         changed()
     }

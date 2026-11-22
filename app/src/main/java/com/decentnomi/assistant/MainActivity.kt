@@ -22,7 +22,7 @@ class MainActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var toggle: Button
     private lateinit var langBtn: Button
-    private val langs = listOf("hi-IN", "en-US", "ur-PK", "pa-IN")
+    private val langs = listOf("hi-IN", "en-US")
     private val prefs by lazy { getSharedPreferences("decent", Context.MODE_PRIVATE) }
 
     private fun render() {
