@@ -41,6 +41,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     private var mode = 0
     private var nextMode = 0
     private var busy = false
+    private var preferOffline = true
     private val safety = Runnable { resume() }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -135,7 +136,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
             i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
             sr?.startListening(i)
             setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "Decent bolen")
@@ -244,6 +245,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             stopSelf()
             return
         }
+        if (error == 12 || error == 13) preferOffline = false
         if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
             mode = 0
         } else {
