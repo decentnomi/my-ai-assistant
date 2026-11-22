@@ -25,11 +25,14 @@ import java.util.Locale
 class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener {
 
     companion object {
-        const val CH = "nomi_wake"
+        const val CH = "decent_wake"
+        val WORDS = listOf(
+            "decent", "descent", "disent", "desent", "deesent", "dicent",
+            "डिसेंट", "डीसेंट", "डेसेंट", "डिसेन्ट", "ڈیسنٹ"
+        )
     }
 
     private lateinit var prefs: SharedPreferences
-    private lateinit var actions: Actions
     private val h = Handler(Looper.getMainLooper())
     private var sr: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
@@ -38,15 +41,13 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     private var mode = 0
     private var nextMode = 0
     private var busy = false
-    private var lastHeard = ""
     private val safety = Runnable { resume() }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        prefs = getSharedPreferences("assistant", Context.MODE_PRIVATE)
-        actions = Actions(this)
+        prefs = getSharedPreferences("decent", Context.MODE_PRIVATE)
         tts = TextToSpeech(this, this)
     }
 
@@ -68,16 +69,11 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!started) {
             started = true
+            Bus.running = true
+            Bus.add("Service chalu")
             startInForeground()
             beepMute(true)
             h.post { listen() }
-        }
-        val t = intent?.getStringExtra("text")
-        if (t != null && t.isNotBlank()) {
-            h.post { process(t) }
-        }
-        if (intent?.getBooleanExtra("listen", false) == true) {
-            h.post { startCommandMode() }
         }
         return START_STICKY
     }
@@ -135,15 +131,16 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             }
             val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            val lang = (prefs.getString("rlang", "hi-IN") ?: "hi-IN").ifBlank { "hi-IN" }
+            val lang = prefs.getString("rlang", "hi-IN") ?: "hi-IN"
             i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
             i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
             i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
             sr?.startListening(i)
-            setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "suna: " + lastHeard + "  |  Decent bolen")
+            setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "Decent bolen")
         } catch (e: Exception) {
+            Bus.add("listen masla: " + e.message)
             h.postDelayed({ listen() }, 2000)
         }
     }
@@ -152,7 +149,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         val low = s.lowercase(Locale.ROOT)
         var bestIdx = -1
         var bestLen = 0
-        for (w in WakeWords.list(prefs)) {
+        for (w in WORDS) {
             var from = 0
             while (true) {
                 val i = low.indexOf(w, from)
@@ -169,7 +166,23 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             }
         }
         if (bestIdx < 0) return null
-        return low.substring(bestIdx + bestLen).trim().trimStart(',', '.', '!', '?', '-', ' ', '\u060C', '\u0964').trim()
+        return low.substring(bestIdx + bestLen).trim().trimStart(',', '.', '!', '?', '-', ' ').trim()
+    }
+
+    private fun speak(text: String, lang: String) {
+        val t = tts
+        if (t == null || !ttsReady) {
+            resume()
+            return
+        }
+        val r = t.setLanguage(Locale.forLanguageTag(lang))
+        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
+            t.setLanguage(Locale("en", "IN"))
+            t.speak("Ji, boliye", TextToSpeech.QUEUE_FLUSH, null, "u")
+        } else {
+            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u")
+        }
+        h.postDelayed(safety, 8000)
     }
 
     private fun startCommandMode() {
@@ -180,12 +193,7 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             sr?.cancel()
         } catch (e: Exception) {
         }
-        val hiOk = (tts?.isLanguageAvailable(Locale("hi", "IN")) ?: -2) >= TextToSpeech.LANG_AVAILABLE
-        if (hiOk) {
-            speak("\u091C\u0940, \u092C\u094B\u0932\u093F\u090F", "hi-IN", "Ji, boliye")
-        } else {
-            speak("Ji, boliye", "en-IN", "Ji, boliye")
-        }
+        speak("जी, बोलिए", "hi-IN")
     }
 
     private fun resume() {
@@ -197,72 +205,6 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
         h.postDelayed({ listen() }, 400)
     }
 
-    private fun process(text: String) {
-        busy = true
-        nextMode = 0
-        h.removeCallbacks(safety)
-        try {
-            sr?.cancel()
-        } catch (e: Exception) {
-        }
-        ChatLog.add(true, text)
-        setStatus("Soch raha hoon...")
-        val pr = NomiCore.tryPending(text, actions, prefs)
-        if (pr != null) {
-            deliver(pr)
-            return
-        }
-        val fp = FastPath.run(text, actions)
-        if (fp != null) {
-            deliver(fp)
-            return
-        }
-        val key = prefs.getString("key", "") ?: ""
-        if (key.isBlank()) {
-            deliver(Reply("Pehle app ma Gemini key paste karke Save karen", "Pehle app me Gemini key save karen", "en-IN"))
-            return
-        }
-        Thread {
-            val res = NomiCore.ask(prefs, text)
-            h.post {
-                if (res.first in 200..299) {
-                    val raw = NomiCore.extractText(res.second)
-                    if (raw != null) {
-                        NomiCore.remember(text, raw)
-                        deliver(NomiCore.dispatch(raw, actions, prefs))
-                    } else {
-                        deliver(Reply("Jawab samajh nahi aaya", "Jawab samajh nahi aaya", "en-IN"))
-                    }
-                } else {
-                    deliver(if (res.first == -1) Reply("Internet nahi hai. Abhi sirf basic hukm chalenge.", "Internet nahi hai. Abhi sirf basic hukm chalenge.", "en-IN") else Reply("Gemini error " + res.first + ": " + res.second.take(150), "Gemini ma masla aaya", "en-IN"))
-                }
-            }
-        }.start()
-    }
-
-    private fun deliver(r: Reply) {
-        ChatLog.add(false, r.display)
-        if (r.voice) speak(r.speak, r.lang, r.display) else resume()
-    }
-
-    private fun speak(text: String, lang: String, alt: String) {
-        val t = tts
-        if (t == null || !ttsReady || text.isBlank()) {
-            resume()
-            return
-        }
-        val loc = if (lang.isBlank()) Locale("en", "IN") else Locale.forLanguageTag(lang)
-        val r = t.setLanguage(loc)
-        var out = text
-        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-            t.setLanguage(Locale("en", "IN"))
-            out = alt
-        }
-        setStatus("Bol raha hoon...")
-        t.speak(out, TextToSpeech.QUEUE_FLUSH, null, "u")
-        h.postDelayed(safety, 20000)
-    }
-
     override fun onResults(results: Bundle?) {
         if (busy) return
         val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -270,33 +212,42 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
             h.postDelayed({ listen() }, 150)
             return
         }
+        Bus.heard++
         if (mode == 1) {
             mode = 0
-            val t = list[0].trim()
-            if (t.isNotBlank()) process(t) else listen()
+            Bus.add("HUKM: " + list[0])
+            h.postDelayed({ listen() }, 100)
             return
         }
         for (s in list) {
             val rest = wakeRemainder(s)
             if (rest != null) {
-                if (rest.length >= 2) process(rest) else startCommandMode()
+                Bus.wakes++
+                Bus.add("WAKE ok: " + s)
+                if (rest.length >= 2) {
+                    Bus.add("HUKM (ek saans): " + rest)
+                    h.postDelayed({ listen() }, 100)
+                } else {
+                    startCommandMode()
+                }
                 return
             }
         }
-        lastHeard = list[0].take(50)
+        Bus.add("suna: " + list[0].take(60))
         h.postDelayed({ listen() }, 100)
     }
 
     override fun onError(error: Int) {
         if (busy) return
         if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+            Bus.add("Mic ki ijazat nahi")
             stopSelf()
             return
         }
         if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
             mode = 0
         } else {
-            lastHeard = "err " + error
+            Bus.add("err " + error)
         }
         val wait = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 200L
         h.postDelayed({ listen() }, wait)
@@ -312,6 +263,8 @@ class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener 
 
     override fun onDestroy() {
         started = false
+        Bus.running = false
+        Bus.add("Service band")
         h.removeCallbacksAndMessages(null)
         try {
             sr?.destroy()
