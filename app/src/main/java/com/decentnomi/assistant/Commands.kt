@@ -35,7 +35,7 @@ object Commands {
         if (has("volume", "volyoom", "vol", "awaz", "awaaz", "aavaz", "aavaaj", "aawaz")) {
             return volume(ctx, w)
         }
-        if (has("brightness", "brightnes", "braitnes", "braaitnes")) return brightness(ctx, w)
+        if (has("brightness", "brightnes", "braitnes", "braaitnes", "fitness", "bright", "britnes")) return brightness(ctx, w)
         if (has("battery", "charge", "charging", "baitri", "betri", "battary")) {
             return battery(ctx)
         }
@@ -43,6 +43,7 @@ object Commands {
             val s = SimpleDateFormat("h:mm a", Locale.US).format(Date())
             return "Abhi " + s + " baje hain"
         }
+        if (has("call", "kol", "kaal", "dial", "milao", "mila", "phone", "fone") && !has("whatsapp")) return callFlow(ctx, w)
         if (w.any { OPEN.contains(it) }) {
             return openApp(ctx, w)
         }
@@ -201,6 +202,82 @@ object Commands {
             msg
         } catch (e: Exception) {
             "Brightness ma masla aaya"
+        }
+    }
+
+    private fun skel2(s: String): String {
+        var x = s.lowercase(Locale.ROOT).replace(Regex("[^a-z ]"), "")
+        x = x.replace("vh", "w").replace("v", "w").replace("ph", "f")
+            .replace("kh", "k").replace("sh", "s").replace("ch", "c").replace("h", "")
+        x = x.replace(Regex("[aeiouy]"), "a")
+        val sb = StringBuilder()
+        for (c in x) {
+            if (sb.isEmpty() || sb[sb.length - 1] != c) sb.append(c)
+        }
+        return sb.toString().trim()
+    }
+
+    private fun nameDist(q: List<String>, contact: String): Int {
+        val cw = skel2(Roman.of(contact)).split(" ").filter { it.isNotEmpty() }
+        val qw = q.map { skel2(it) }.filter { it.isNotEmpty() }
+        if (cw.isEmpty() || qw.isEmpty()) return 99
+        var best = lev(qw.joinToString(""), cw.joinToString(""))
+        for (a in qw) for (b in cw) best = minOf(best, lev(a, b) + 1)
+        return best
+    }
+
+    private fun callFlow(ctx: Context, w: List<String>): String {
+        val pm = android.content.pm.PackageManager.PERMISSION_GRANTED
+        val ok = ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == pm &&
+            ctx.checkSelfPermission(android.Manifest.permission.CALL_PHONE) == pm
+        if (!ok) {
+            try {
+                val i = Intent(ctx, PermActivity::class.java)
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(i)
+            } catch (e: Exception) {
+            }
+            return "Contacts aur call ki ijazat den"
+        }
+        val callw = setOf(
+            "call", "kol", "kaal", "dial", "milao", "mila", "phone", "fone", "karo", "kar",
+            "do", "ko", "ka", "ki", "ke", "please", "plz", "zara", "jaldi", "mujhe", "aur",
+            "ji", "lagao", "laga", "kijiye"
+        )
+        val q = w.filter { !callw.contains(it) && !STOP.contains(it) }
+        if (q.isEmpty()) return "Kisko call karni hai?"
+        var bestD = 99
+        var bestName = ""
+        var bestNum = ""
+        val c = ctx.contentResolver.query(
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+            ), null, null, null
+        )
+        c?.use {
+            while (it.moveToNext()) {
+                val nm = it.getString(0) ?: continue
+                val num = it.getString(1) ?: continue
+                val d = nameDist(q, nm)
+                if (d < bestD) {
+                    bestD = d
+                    bestName = nm
+                    bestNum = num
+                }
+            }
+        }
+        val allowed = if (q.joinToString("").length <= 5) 1 else 2
+        if (bestD > allowed) return q.joinToString(" ") + " naam ka contact nahi mila"
+        if (!android.provider.Settings.canDrawOverlays(ctx)) return "Pehle Display over other apps ki ijazat den"
+        return try {
+            val i = Intent(Intent.ACTION_CALL, android.net.Uri.parse("tel:" + android.net.Uri.encode(bestNum)))
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(i)
+            Roman.of(bestName) + " ko call kar raha hun"
+        } catch (e: Exception) {
+            "Call ma masla aaya"
         }
     }
 }
