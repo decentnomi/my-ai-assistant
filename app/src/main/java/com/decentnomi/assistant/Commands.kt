@@ -28,6 +28,7 @@ object Commands {
         val w = t.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
 
+        smsHook(ctx, w)?.let { return it }
         if (has("torch", "tarch", "flashlight", "flash", "light", "lite", "laait", "roshni")) {
             val on = !has("band", "off", "bujha", "bujhao", "bandh", "bund")
             return torch(ctx, on)
@@ -146,7 +147,7 @@ object Commands {
                 if (sq.isEmpty()) continue
                 var sc = 99
                 if (sa == sq) sc = 0
-                else if (sa.length >= 4 && sq.length >= 4 && lev(sa, sq) <= 1) sc = 1
+                else if (sa.length >= 3 && sq.length >= 3 && lev(sa, sq) <= 1 && sa[0] == sq[0]) sc = 1
                 else if (sq.length >= 3 && sa.length >= 3 && (sa.contains(sq) || sq.contains(sa))) sc = 2
                 if (sc < best) {
                     best = sc
@@ -292,5 +293,88 @@ object Commands {
             part = if (okAll) sum + 1 else 99
         }
         return minOf(whole, part)
+    }
+
+    private var pending: Triple<String, String, String>? = null
+    private val YES = setOf("haan", "han", "ha", "ji", "yes", "bhej", "bhejo", "ok", "okay", "theek", "send")
+    private val NO = setOf("nahi", "nahin", "no", "cancel", "mat", "ruko", "rehne", "na")
+    private val BODYKEY = setOf("ki", "keh", "kaho", "likho", "likh", "batao")
+
+    private fun findContact(ctx: Context, q: List<String>): Pair<String, String>? {
+        var bestD = 99
+        var bestName = ""
+        var bestNum = ""
+        val c = ctx.contentResolver.query(
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER
+            ), null, null, null
+        )
+        c?.use {
+            while (it.moveToNext()) {
+                val nm = it.getString(0) ?: continue
+                val num = it.getString(1) ?: continue
+                val d = nameDist(q, nm)
+                if (d < bestD) {
+                    bestD = d
+                    bestName = nm
+                    bestNum = num
+                }
+            }
+        }
+        val allowed = if (q.joinToString("").length <= 5) 1 else 2
+        if (bestD > allowed) return null
+        return Pair(bestName, bestNum)
+    }
+
+    private fun sendSms(ctx: Context, p: Triple<String, String, String>): String {
+        return try {
+            val sm: android.telephony.SmsManager = if (android.os.Build.VERSION.SDK_INT >= 31) {
+                ctx.getSystemService(android.telephony.SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                android.telephony.SmsManager.getDefault()
+            }
+            val parts = sm.divideMessage(p.third)
+            sm.sendMultipartTextMessage(p.second, null, parts, null, null)
+            Roman.of(p.first) + " ko SMS bhej diya"
+        } catch (e: Exception) {
+            "SMS bhejne ma masla aaya"
+        }
+    }
+
+    private fun smsHook(ctx: Context, w: List<String>): String? {
+        val p = pending
+        if (p != null) {
+            pending = null
+            val no = w.any { NO.contains(it) }
+            val yes = w.any { YES.contains(it) }
+            if (yes && !no) return sendSms(ctx, p)
+            if (no) return "Theek hai, SMS cancel kar diya"
+            return null
+        }
+        if (!(w.contains("sms") || w.contains("esemes") || w.contains("emes"))) return null
+        val g = android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != g ||
+            ctx.checkSelfPermission(android.Manifest.permission.SEND_SMS) != g
+        ) return "Decent Setup ma ijazat den"
+        val ko = w.indexOf("ko")
+        if (ko <= 0) return "Aise bolen: Ali ko SMS karo ki main aa raha hun"
+        val skip = setOf("sms", "esemes", "emes", "karo", "kar", "do", "bhejo", "bhej")
+        val q = w.subList(0, ko).filter { !skip.contains(it) && !STOP.contains(it) }
+        if (q.isEmpty()) return "Kis ko SMS bhejna hai?"
+        var bi = -1
+        for (i in ko + 1 until w.size) {
+            if (BODYKEY.contains(w[i])) {
+                bi = i
+                break
+            }
+        }
+        if (bi < 0 || bi + 1 >= w.size) return "SMS ma kya likhna hai? Aise bolen: Ali ko SMS karo ki main aa raha hun"
+        val body = w.subList(bi + 1, w.size).joinToString(" ")
+        val ct = findContact(ctx, q) ?: return q.joinToString(" ") + " naam ka contact nahi mila"
+        pending = Triple(ct.first, ct.second, body)
+        return Roman.of(ct.first) + " ko ye SMS bhejun? " + body + ". Haan ya nahi bolen"
     }
 }

@@ -13,6 +13,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -20,6 +21,9 @@ import android.widget.TextView
 class SetupActivity : Activity() {
 
     private val rows = ArrayList<Triple<Button, String, () -> Boolean>>()
+    private var modeBtn: Button? = null
+
+    private fun prefs() = getSharedPreferences("decent", Context.MODE_PRIVATE)
 
     private fun perms(): List<String> {
         val l = arrayListOf(
@@ -82,6 +86,39 @@ class SetupActivity : Activity() {
             }
         }
 
+        val et = EditText(this)
+        et.hint = "Gemini API key yahan paste karen"
+        et.setTextColor(Color.WHITE)
+        et.setHintTextColor(Color.GRAY)
+        et.setSingleLine(true)
+        root.addView(et)
+
+        add(root, "5. Gemini key save karen", { (prefs().getString("gkey", "") ?: "").isNotBlank() }) {
+            val k = et.text.toString().trim()
+            if (k.isNotEmpty()) {
+                prefs().edit().putString("gkey", k).apply()
+                et.setText("")
+            }
+            refresh()
+        }
+
+        val mb = Button(this)
+        mb.setTextColor(Color.WHITE)
+        mb.isAllCaps = false
+        mb.setBackgroundColor(Color.parseColor("#37474F"))
+        mb.setOnClickListener {
+            val gf = (prefs().getString("mode", "pro") ?: "pro") == "gf"
+            prefs().edit().putString("mode", if (gf) "pro" else "gf").apply()
+            refresh()
+        }
+        val lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        lp.setMargins(0, 0, 0, 24)
+        root.addView(mb, lp)
+        modeBtn = mb
+
         val sv = ScrollView(this)
         sv.addView(root)
         setContentView(sv)
@@ -113,6 +150,8 @@ class SetupActivity : Activity() {
             r.first.text = if (good) "[OK]  " + r.second else r.second
             r.first.setBackgroundColor(Color.parseColor(if (good) "#2E7D32" else "#555555"))
         }
+        val gf = (prefs().getString("mode", "pro") ?: "pro") == "gf"
+        modeBtn?.text = "Mode: " + (if (gf) "Girlfriend" else "Professional") + "  (badalne ke liye dabayen)"
     }
 
     override fun onResume() {

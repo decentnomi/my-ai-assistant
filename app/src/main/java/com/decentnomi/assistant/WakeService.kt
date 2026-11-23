@@ -199,7 +199,7 @@ class WakeService : Service() {
         Bus.wakes++
         Bus.add("HUKM: " + said)
         Bus.changed()
-        val rep = Commands.run(this, Roman.of(said)) ?: "Samajh nahi aaya"; Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep)
+        val rep = Commands.run(this, Roman.of(said)); if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val r = Gem.ask(this, said); h.post { if (alive) { Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
     }
 
     private fun speakBack(s: String) {
