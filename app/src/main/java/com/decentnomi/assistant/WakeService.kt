@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -15,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -22,258 +22,231 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
-class WakeService : Service(), RecognitionListener, TextToSpeech.OnInitListener {
+class WakeService : Service() {
 
-    companion object {
-        const val CH = "decent_wake"
-        val WORDS = listOf(
-            "decent", "descent", "disent", "desent", "deesent", "dicent",
-            "डिसेंट", "डीसेंट", "डेसेंट", "डिसेन्ट", "ڈیسنٹ"
-        )
-    }
-
-    private lateinit var prefs: SharedPreferences
     private val h = Handler(Looper.getMainLooper())
-    private var sr: SpeechRecognizer? = null
+    private var rec: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var ttsReady = false
-    private var started = false
-    private var mode = 0
-    private var nextMode = 0
-    private var busy = false
+    private var hindiOk = false
+    private var alive = false
     private var preferOffline = true
-    private val safety = Runnable { resume() }
+    private var speaking = false
+    private var wl: PowerManager.WakeLock? = null
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    private val speakTimeout = Runnable {
+        if (speaking) {
+            Bus.add("TTS timeout (awaz nahi aayi)")
+            afterSpeak()
+        }
+    }
+
+    override fun onBind(i: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        prefs = getSharedPreferences("decent", Context.MODE_PRIVATE)
-        tts = TextToSpeech(this, this)
-    }
-
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            ttsReady = true
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {}
-                override fun onDone(utteranceId: String?) {
-                    h.post { resume() }
-                }
-                override fun onError(utteranceId: String?) {
-                    h.post { resume() }
-                }
-            })
-        }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!started) {
-            started = true
-            Bus.running = true
-            Bus.add("Service chalu")
-            startInForeground()
-            beepMute(true)
-            h.post { listen() }
-        }
-        return START_STICKY
-    }
-
-    private fun buildNotif(text: String): Notification {
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
-        )
-        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CH) else Notification.Builder(this)
-        return b.setContentTitle("Decent")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentIntent(open)
-            .setOngoing(true)
-            .build()
-    }
-
-    private fun startInForeground() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
-            nm.createNotificationChannel(NotificationChannel(CH, "Decent", NotificationManager.IMPORTANCE_LOW))
+            nm.createNotificationChannel(
+                NotificationChannel("decent", "Decent", NotificationManager.IMPORTANCE_LOW)
+            )
         }
-        val n = buildNotif("Decent bolen")
+        val pi = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, "decent")
+        else Notification.Builder(this)
+        val n = b.setContentTitle("Decent")
+            .setContentText("Main sun raha hun, bolen")
+            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentIntent(pi)
+            .setOngoing(true)
+            .build()
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
             startForeground(1, n)
         }
-    }
-
-    private fun setStatus(s: String) {
         try {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.notify(1, buildNotif(s))
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "decent:wake")
+            wl?.acquire()
         } catch (e: Exception) {
         }
+        tts = TextToSpeech(this) { st ->
+            ttsReady = (st == TextToSpeech.SUCCESS)
+            Bus.add("TTS init " + st)
+            if (ttsReady) setupVoice()
+        }
+        alive = true
+        Bus.running = true
+        Bus.add("Service chalu")
+        Bus.changed()
+        listen()
     }
 
-    private fun beepMute(mute: Boolean) {
+    private fun setupVoice() {
+        val t = tts ?: return
+        val r = t.setLanguage(Locale("hi", "IN"))
+        hindiOk = r >= TextToSpeech.LANG_AVAILABLE
+        if (!hindiOk) t.setLanguage(Locale("en", "IN"))
+        Bus.add("TTS hindi awaz: " + (if (hindiOk) "haan" else "nahi, English"))
+        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                h.post { Bus.add("TTS bol raha"); Bus.changed() }
+            }
+            override fun onDone(id: String?) {
+                h.post { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() }
+            }
+            @Deprecated("old")
+            override fun onError(id: String?) {
+                h.post { Bus.add("TTS ERR"); Bus.changed(); afterSpeak() }
+            }
+        })
+    }
+
+    override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
+
+    private fun muteBeep(on: Boolean) {
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val d = if (mute) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+            val d = if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
             am.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, d, 0)
             am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, d, 0)
         } catch (e: Exception) {
         }
     }
 
+    private fun killRec() {
+        try {
+            rec?.setRecognitionListener(null)
+            rec?.cancel()
+            rec?.destroy()
+        } catch (e: Exception) {
+        }
+        rec = null
+    }
+
+    private fun later(ms: Long) {
+        h.postDelayed({ if (alive && !speaking) listen() }, ms)
+    }
+
     private fun listen() {
-        if (!started || busy) return
-        try {
-            if (sr == null) {
-                sr = SpeechRecognizer.createSpeechRecognizer(this)
-                sr?.setRecognitionListener(this)
-            }
-            val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            val lang = prefs.getString("rlang", "hi-IN") ?: "hi-IN"
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
-            i.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-            i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
-            i.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800L)
-            sr?.startListening(i)
-            setStatus(if (mode == 1) "Boliye, sun raha hoon..." else "Decent bolen")
-        } catch (e: Exception) {
-            Bus.add("listen masla: " + e.message)
-            h.postDelayed({ listen() }, 2000)
+        if (!alive) return
+        killRec()
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Bus.add("Recognizer nahi mila")
+            Bus.changed()
+            later(3000)
+            return
         }
-    }
-
-    private fun wakeRemainder(s: String): String? {
-        val low = s.lowercase(Locale.ROOT)
-        var bestIdx = -1
-        var bestLen = 0
-        for (w in WORDS) {
-            var from = 0
-            while (true) {
-                val i = low.indexOf(w, from)
-                if (i < 0) break
-                val endOk = i + w.length >= low.length || !low[i + w.length].isLetter()
-                if ((i == 0 || !low[i - 1].isLetter()) && endOk) {
-                    if (bestIdx < 0 || i < bestIdx) {
-                        bestIdx = i
-                        bestLen = w.length
-                    }
-                    break
+        val lang = getSharedPreferences("decent", Context.MODE_PRIVATE)
+            .getString("rlang", "hi-IN") ?: "hi-IN"
+        val r = SpeechRecognizer.createSpeechRecognizer(this)
+        rec = r
+        r.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(p: Bundle?) {}
+            override fun onBeginningOfSpeech() {}
+            override fun onRmsChanged(v: Float) {}
+            override fun onBufferReceived(b: ByteArray?) {}
+            override fun onEndOfSpeech() {}
+            override fun onPartialResults(p: Bundle?) {}
+            override fun onEvent(t: Int, p: Bundle?) {}
+            override fun onError(e: Int) {
+                muteBeep(false)
+                if (e != SpeechRecognizer.ERROR_NO_MATCH && e != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                    Bus.add("err " + e)
                 }
-                from = i + 1
+                if ((e == 12 || e == 13) && preferOffline) {
+                    preferOffline = false
+                    Bus.add("offline nahi, online use")
+                }
+                Bus.changed()
+                later(if (e == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1500 else 400)
             }
-        }
-        if (bestIdx < 0) return null
-        return low.substring(bestIdx + bestLen).trim().trimStart(',', '.', '!', '?', '-', ' ').trim()
-    }
-
-    private fun speak(text: String, lang: String) {
-        val t = tts
-        if (t == null || !ttsReady) {
-            resume()
-            return
-        }
-        val r = t.setLanguage(Locale.forLanguageTag(lang))
-        if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) {
-            t.setLanguage(Locale("en", "IN"))
-            t.speak("Ji, boliye", TextToSpeech.QUEUE_FLUSH, null, "u")
-        } else {
-            t.speak(text, TextToSpeech.QUEUE_FLUSH, null, "u")
-        }
-        h.postDelayed(safety, 8000)
-    }
-
-    private fun startCommandMode() {
-        busy = true
-        nextMode = 1
-        h.removeCallbacks(safety)
+            override fun onResults(res: Bundle?) {
+                muteBeep(false)
+                val list = res?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
+                handle(list)
+            }
+        })
+        val it = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        it.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        it.putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+        it.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, preferOffline)
+        it.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        it.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+        it.putExtra("android.speech.extra.SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS", 800)
+        it.putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+        muteBeep(true)
         try {
-            sr?.cancel()
+            r.startListening(it)
         } catch (e: Exception) {
+            muteBeep(false)
+            Bus.add("start ERR " + e.message)
+            later(1500)
         }
-        speak("जी, बोलिए", "hi-IN")
     }
 
-    private fun resume() {
-        h.removeCallbacks(safety)
-        if (!busy) return
-        busy = false
-        mode = nextMode
-        nextMode = 0
-        h.postDelayed({ listen() }, 400)
-    }
-
-    override fun onResults(results: Bundle?) {
-        if (busy) return
-        val list = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-        if (list.isNullOrEmpty()) {
-            h.postDelayed({ listen() }, 150)
+    private fun handle(list: List<String>) {
+        if (list.isEmpty() || list[0].isBlank()) {
+            later(300)
             return
         }
+        val said = list[0]
         Bus.heard++
-        if (mode == 1) {
-            mode = 0
-            Bus.add("HUKM: " + list[0])
-            h.postDelayed({ listen() }, 100)
-            return
-        }
-        for (s in list) {
-            val rest = wakeRemainder(s)
-            if (rest != null) {
-                Bus.wakes++
-                Bus.add("WAKE ok: " + s)
-                if (rest.length >= 2) {
-                    Bus.add("HUKM (ek saans): " + rest)
-                    h.postDelayed({ listen() }, 100)
-                } else {
-                    startCommandMode()
-                }
-                return
-            }
-        }
-        Bus.add("suna: " + list[0].take(60))
-        h.postDelayed({ listen() }, 100)
+        Bus.wakes++
+        Bus.add("HUKM: " + said)
+        Bus.changed()
+        speakBack(if (hindiOk) said else Roman.of(said))
     }
 
-    override fun onError(error: Int) {
-        if (busy) return
-        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-            Bus.add("Mic ki ijazat nahi")
-            stopSelf()
+    private fun speakBack(s: String) {
+        killRec()
+        val t = tts
+        if (!ttsReady || t == null) {
+            Bus.add("TTS tayyar nahi")
+            Bus.changed()
+            later(300)
             return
         }
-        if (error == 12 || error == 13) preferOffline = false
-        if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
-            mode = 0
-        } else {
-            Bus.add("err " + error)
+        speaking = true
+        h.removeCallbacks(speakTimeout)
+        h.postDelayed(speakTimeout, 6000)
+        val rc = t.speak(s, TextToSpeech.QUEUE_FLUSH, null, "say")
+        if (rc != TextToSpeech.SUCCESS) {
+            Bus.add("speak ERR " + rc)
+            Bus.changed()
+            afterSpeak()
         }
-        val wait = if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 200L
-        h.postDelayed({ listen() }, wait)
     }
 
-    override fun onPartialResults(partialResults: Bundle?) {}
-    override fun onReadyForSpeech(params: Bundle?) {}
-    override fun onBeginningOfSpeech() {}
-    override fun onRmsChanged(rmsdB: Float) {}
-    override fun onBufferReceived(buffer: ByteArray?) {}
-    override fun onEndOfSpeech() {}
-    override fun onEvent(eventType: Int, params: Bundle?) {}
+    private fun afterSpeak() {
+        if (!speaking) return
+        speaking = false
+        h.removeCallbacks(speakTimeout)
+        if (!alive) return
+        h.postDelayed({ if (alive && !speaking) listen() }, 250)
+    }
 
     override fun onDestroy() {
-        started = false
-        Bus.running = false
-        Bus.add("Service band")
+        alive = false
         h.removeCallbacksAndMessages(null)
+        killRec()
+        muteBeep(false)
         try {
-            sr?.destroy()
+            tts?.stop()
+            tts?.shutdown()
         } catch (e: Exception) {
         }
-        tts?.shutdown()
-        beepMute(false)
+        try {
+            wl?.release()
+        } catch (e: Exception) {
+        }
+        Bus.running = false
+        Bus.add("Service band")
+        Bus.changed()
         super.onDestroy()
     }
 }
