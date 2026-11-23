@@ -217,14 +217,6 @@ object Commands {
         return sb.toString().trim()
     }
 
-    private fun nameDist(q: List<String>, contact: String): Int {
-        val cw = skel2(Roman.of(contact)).split(" ").filter { it.isNotEmpty() }
-        val qw = q.map { skel2(it) }.filter { it.isNotEmpty() }
-        if (cw.isEmpty() || qw.isEmpty()) return 99
-        var best = lev(qw.joinToString(""), cw.joinToString(""))
-        for (a in qw) for (b in cw) best = minOf(best, lev(a, b) + 1)
-        return best
-    }
 
     private fun callFlow(ctx: Context, w: List<String>): String {
         val pm = android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -279,5 +271,26 @@ object Commands {
         } catch (e: Exception) {
             "Call ma masla aaya"
         }
+    }
+
+    private fun nameDist(q: List<String>, contact: String): Int {
+        val cw = skel2(Roman.of(contact)).split(" ").filter { it.isNotEmpty() }
+        val qw = q.map { skel2(it) }.filter { it.isNotEmpty() }
+        if (cw.isEmpty() || qw.isEmpty()) return 99
+        val whole = lev(qw.joinToString(""), cw.joinToString(""))
+        val part: Int
+        if (qw.size == 1) {
+            part = cw.minOf { lev(qw[0], it) } + 1
+        } else {
+            var sum = 0
+            var okAll = true
+            for (a in qw) {
+                val m = cw.minOf { lev(a, it) }
+                if (m > 1) okAll = false
+                sum += m
+            }
+            part = if (okAll) sum + 1 else 99
+        }
+        return minOf(whole, part)
     }
 }
