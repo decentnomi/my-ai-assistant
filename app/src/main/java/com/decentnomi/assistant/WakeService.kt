@@ -32,6 +32,7 @@ class WakeService : Service() {
     private var alive = false
     private var preferOffline = true
     private var speaking = false
+    private var t0 = 0L
     private var wl: PowerManager.WakeLock? = null
 
     private val speakTimeout = Runnable {
@@ -94,7 +95,7 @@ class WakeService : Service() {
         Bus.add("TTS hindi awaz: " + (if (hindiOk) "haan" else "nahi, English"))
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {
-                h.post { Bus.add("TTS bol raha"); Bus.changed() }
+                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms"); Bus.changed() }
             }
             override fun onDone(id: String?) {
                 h.post { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() }
@@ -199,11 +200,10 @@ class WakeService : Service() {
         Bus.wakes++
         Bus.add("HUKM: " + said)
         Bus.changed()
-        val rep = Commands.run(this, Roman.of(said)); if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val r = Gem.ask(this, said); h.post { if (alive) { Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
+        val rep = Commands.run(this, Roman.of(said)); if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
     }
 
     private fun speakBack(s: String) {
-        killRec()
         val t = tts
         if (!ttsReady || t == null) {
             Bus.add("TTS tayyar nahi")
@@ -214,6 +214,7 @@ class WakeService : Service() {
         speaking = true
         h.removeCallbacks(speakTimeout)
         h.postDelayed(speakTimeout, 15000)
+        t0 = System.currentTimeMillis()
         val rc = t.speak(s, TextToSpeech.QUEUE_FLUSH, null, "say")
         if (rc != TextToSpeech.SUCCESS) {
             Bus.add("speak ERR " + rc)
