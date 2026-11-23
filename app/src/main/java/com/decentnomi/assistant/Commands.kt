@@ -28,7 +28,7 @@ object Commands {
         val w = t.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
 
-        if (has("torch", "tarch", "flashlight", "flash")) {
+        if (has("torch", "tarch", "flashlight", "flash", "light", "lite", "laait", "roshni")) {
             val on = !has("band", "off", "bujha", "bujhao", "bandh", "bund")
             return torch(ctx, on)
         }
@@ -157,6 +157,7 @@ object Commands {
         val li = pm.getLaunchIntentForPackage(bestPkg) ?: return bestLabel + " khul nahi saki"
         li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
+            if (!android.provider.Settings.canDrawOverlays(ctx)) return "Pehle Display over other apps ki ijazat den"
             ctx.startActivity(li)
             bestLabel + " khol raha hun"
         } catch (e: Exception) {
