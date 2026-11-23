@@ -213,7 +213,7 @@ class WakeService : Service() {
         }
         speaking = true
         h.removeCallbacks(speakTimeout)
-        h.postDelayed(speakTimeout, 6000)
+        h.postDelayed(speakTimeout, 15000)
         val rc = t.speak(s, TextToSpeech.QUEUE_FLUSH, null, "say")
         if (rc != TextToSpeech.SUCCESS) {
             Bus.add("speak ERR " + rc)
