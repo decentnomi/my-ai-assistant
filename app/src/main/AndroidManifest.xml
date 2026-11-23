@@ -41,5 +41,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
         <activity android:name=".PermActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity android:name=".SetupActivity" android:exported="true" android:label="Decent Setup" android:theme="@android:style/Theme.DeviceDefault.NoActionBar"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity>
     </application>
 </manifest>

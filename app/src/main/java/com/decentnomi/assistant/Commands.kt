@@ -159,7 +159,7 @@ object Commands {
         val li = pm.getLaunchIntentForPackage(bestPkg) ?: return bestLabel + " khul nahi saki"
         li.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
-            if (!android.provider.Settings.canDrawOverlays(ctx)) return "Pehle Display over other apps ki ijazat den"
+            if (!android.provider.Settings.canDrawOverlays(ctx)) return "Decent Setup ma ijazat den"
             ctx.startActivity(li)
             bestLabel + " khol raha hun"
         } catch (e: Exception) {
@@ -169,7 +169,7 @@ object Commands {
 
     private fun brightness(ctx: Context, w: List<String>): String {
         if (!android.provider.Settings.System.canWrite(ctx)) {
-            return "Pehle Modify system settings ki ijazat den"
+            return "Decent Setup ma ijazat den"
         }
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
         return try {
@@ -229,7 +229,7 @@ object Commands {
                 ctx.startActivity(i)
             } catch (e: Exception) {
             }
-            return "Contacts aur call ki ijazat den"
+            return "Decent Setup ma ijazat den"
         }
         val callw = setOf(
             "call", "kol", "kaal", "dial", "milao", "mila", "phone", "fone", "karo", "kar",
@@ -262,7 +262,7 @@ object Commands {
         }
         val allowed = if (q.joinToString("").length <= 5) 1 else 2
         if (bestD > allowed) return q.joinToString(" ") + " naam ka contact nahi mila"
-        if (!android.provider.Settings.canDrawOverlays(ctx)) return "Pehle Display over other apps ki ijazat den"
+        if (!android.provider.Settings.canDrawOverlays(ctx)) return "Decent Setup ma ijazat den"
         return try {
             val i = Intent(Intent.ACTION_CALL, android.net.Uri.parse("tel:" + android.net.Uri.encode(bestNum)))
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
