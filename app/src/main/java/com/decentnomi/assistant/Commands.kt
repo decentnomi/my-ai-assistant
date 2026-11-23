@@ -35,6 +35,7 @@ object Commands {
         if (has("volume", "volyoom", "vol", "awaz", "awaaz", "aavaz", "aavaaj", "aawaz")) {
             return volume(ctx, w)
         }
+        if (has("brightness", "brightnes", "braitnes", "braaitnes")) return brightness(ctx, w)
         if (has("battery", "charge", "charging", "baitri", "betri", "battary")) {
             return battery(ctx)
         }
@@ -57,7 +58,7 @@ object Commands {
             cm.setTorchMode(id, on)
             if (on) "Torch jala di" else "Torch band kar di"
         } catch (e: Exception) {
-            "Torch ma masla aaya"
+            run { Bus.add("torch err: " + e.message); "Torch ma masla aaya" }
         }
     }
 
@@ -162,6 +163,44 @@ object Commands {
             bestLabel + " khol raha hun"
         } catch (e: Exception) {
             bestLabel + " kholne ma masla aaya"
+        }
+    }
+
+    private fun brightness(ctx: Context, w: List<String>): String {
+        if (!android.provider.Settings.System.canWrite(ctx)) {
+            return "Pehle Modify system settings ki ijazat den"
+        }
+        fun has(vararg k: String): Boolean = k.any { w.contains(it) }
+        return try {
+            val cr = ctx.contentResolver
+            android.provider.Settings.System.putInt(
+                cr, android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            )
+            val cur = android.provider.Settings.System.getInt(
+                cr, android.provider.Settings.System.SCREEN_BRIGHTNESS, 128
+            )
+            val nv: Int
+            val msg: String
+            if (has("full", "max", "maximum")) {
+                nv = 255
+                msg = "Brightness full kar di"
+            } else if (has("low", "lo")) {
+                nv = 40
+                msg = "Brightness low kar di"
+            } else if (has("kam", "kum", "ghatao", "ghata", "down", "dheema")) {
+                nv = maxOf(10, cur - 60)
+                msg = "Brightness kam kar di"
+            } else {
+                nv = minOf(255, cur + 70)
+                msg = "Brightness badha di"
+            }
+            android.provider.Settings.System.putInt(
+                cr, android.provider.Settings.System.SCREEN_BRIGHTNESS, nv
+            )
+            msg
+        } catch (e: Exception) {
+            "Brightness ma masla aaya"
         }
     }
 }
