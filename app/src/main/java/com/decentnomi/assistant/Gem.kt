@@ -23,8 +23,8 @@ object Gem {
         val u = URL("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent")
         val c = u.openConnection() as HttpURLConnection
         c.requestMethod = "POST"
-        c.connectTimeout = 6000
-        c.readTimeout = 10000
+        c.connectTimeout = 3000
+        c.readTimeout = 4000
         c.doOutput = true
         c.setRequestProperty("Content-Type", "application/json")
         c.setRequestProperty("x-goog-api-key", key)
@@ -84,7 +84,7 @@ object Gem {
             if (dead.contains(a.first)) continue
             if (System.currentTimeMillis() - t0 > 12000) break
             val r = try {
-                post(a.first, key, build(sys, said, a.second))
+                postRetry(a.first, key, build(sys, said, a.second))
             } catch (e: Exception) {
                 return "Internet ya Gemini ma masla aaya"
             }
@@ -113,5 +113,13 @@ object Gem {
             }
         }
         return "Gemini abhi masroof hai, thori der baad try karen"
+    }
+
+    private fun postRetry(m: String, k: String, b: String): Pair<Int, String> {
+        return try {
+            post(m, k, b)
+        } catch (e: Exception) {
+            post(m, k, b)
+        }
     }
 }

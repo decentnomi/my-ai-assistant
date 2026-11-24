@@ -87,25 +87,6 @@ class WakeService : Service() {
         listen()
     }
 
-    private fun setupVoice() {
-        val t = tts ?: return
-        val r = t.setLanguage(Locale("hi", "IN"))
-        hindiOk = r >= TextToSpeech.LANG_AVAILABLE
-        if (!hindiOk) t.setLanguage(Locale("en", "IN"))
-        Bus.add("TTS hindi awaz: " + (if (hindiOk) "haan" else "nahi, English"))
-        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {
-                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms"); Bus.changed() }
-            }
-            override fun onDone(id: String?) {
-                h.post { if (id == "last") { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() } }
-            }
-            @Deprecated("old")
-            override fun onError(id: String?) {
-                h.post { Bus.add("TTS ERR"); Bus.changed(); afterSpeak() }
-            }
-        })
-    }
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
 
@@ -257,5 +238,37 @@ class WakeService : Service() {
                 return
             }
         }
+    }
+
+    private fun setupVoice() {
+        val t = tts ?: return
+        t.setLanguage(Locale("hi", "IN"))
+        var pick: android.speech.tts.Voice? = null
+        try {
+            val vs = t.voices?.filter {
+                !it.isNetworkConnectionRequired && !it.features.contains("notInstalled")
+            } ?: emptyList()
+            pick = vs.firstOrNull { it.locale.language == "hi" }
+                ?: vs.firstOrNull { it.locale.language == "en" && it.locale.country == "IN" }
+                ?: vs.firstOrNull { it.locale.language == "en" }
+            if (pick != null) t.voice = pick
+        } catch (e: Exception) {
+        }
+        val pk = pick
+        hindiOk = pk != null && pk.locale.language == "hi"
+        if (pk == null) t.setLanguage(Locale("en", "IN"))
+        Bus.add("TTS voice: " + (pk?.name ?: "default (online ho sakti hai)"))
+        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {
+                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms"); Bus.changed() }
+            }
+            override fun onDone(id: String?) {
+                h.post { if (id == "last") { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() } }
+            }
+            @Deprecated("old")
+            override fun onError(id: String?) {
+                h.post { Bus.add("TTS ERR"); Bus.changed(); afterSpeak() }
+            }
+        })
     }
 }
