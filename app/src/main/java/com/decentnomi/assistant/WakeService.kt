@@ -90,15 +90,6 @@ class WakeService : Service() {
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
 
-    private fun muteBeep(on: Boolean) {
-        try {
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            val d = if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
-            am.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, d, 0)
-            am.adjustStreamVolume(AudioManager.STREAM_SYSTEM, d, 0)
-        } catch (e: Exception) {
-        }
-    }
 
     private fun killRec() {
         try {
@@ -270,5 +261,35 @@ class WakeService : Service() {
                 h.post { Bus.add("TTS ERR"); Bus.changed(); afterSpeak() }
             }
         })
+    }
+
+    private var musicMuted = false
+
+    private fun muteBeep(on: Boolean) {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val d = if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+        for (st in intArrayOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)) {
+            try {
+                am.adjustStreamVolume(st, d, 0)
+            } catch (e: Exception) {
+            }
+        }
+        try {
+            if (on) {
+                if (!am.isMusicActive) {
+                    if (!musicMuted) {
+                        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
+                        musicMuted = true
+                    }
+                } else if (musicMuted) {
+                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+                    musicMuted = false
+                }
+            } else if (musicMuted) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+                musicMuted = false
+            }
+        } catch (e: Exception) {
+        }
     }
 }
