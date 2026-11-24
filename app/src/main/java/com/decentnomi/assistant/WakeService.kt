@@ -260,7 +260,7 @@ class WakeService : Service() {
         Bus.add("TTS voice: " + (pk?.name ?: "default (online ho sakti hai)"))
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {
-                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms"); Bus.changed() }
+                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms " + (tts?.defaultEngine ?: "?") + " / " + (tts?.voice?.name ?: "?") + " net=" + (tts?.voice?.isNetworkConnectionRequired ?: "?")); Bus.changed() }
             }
             override fun onDone(id: String?) {
                 h.post { if (id == "last") { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() } }

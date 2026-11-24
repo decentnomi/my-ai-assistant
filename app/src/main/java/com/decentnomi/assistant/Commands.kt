@@ -296,8 +296,8 @@ object Commands {
     }
 
     private var pending: Triple<String, String, String>? = null
-    private val YES = setOf("haan", "han", "ha", "ji", "yes", "bhej", "bhejo", "ok", "okay", "theek", "send")
-    private val NO = setOf("nahi", "nahin", "no", "cancel", "mat", "ruko", "rehne", "na")
+    private val YES = setOf("haan", "haa", "jee", "han", "ha", "ji", "yes", "bhej", "bhejo", "ok", "okay", "theek", "send")
+    private val NO = setOf("nahi", "nahin", "naheen", "nhi", "nai", "no", "cancel", "mat", "ruko", "rehne", "na")
     private val BODYKEY = setOf("ki", "keh", "kaho", "likho", "likh", "batao")
 
     private fun findContact(ctx: Context, q: List<String>): Pair<String, String>? {
@@ -354,7 +354,7 @@ object Commands {
             if (no) return "Theek hai, SMS cancel kar diya"
             return null
         }
-        if (!(w.contains("sms") || w.contains("esemes") || w.contains("emes"))) return null
+        if (!(w.any { setOf("sms", "esemes", "emes", "esaemaes", "esamaes", "esemas", "esaemes", "esaems").contains(it) })) return null
         val g = android.content.pm.PackageManager.PERMISSION_GRANTED
         if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) != g ||
             ctx.checkSelfPermission(android.Manifest.permission.SEND_SMS) != g
