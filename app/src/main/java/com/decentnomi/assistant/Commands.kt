@@ -36,7 +36,7 @@ object Commands {
         if (has("volume", "volyoom", "vol", "awaz", "awaaz", "aavaz", "aavaaj", "aawaz")) {
             return volume(ctx, w)
         }
-        if (has("brightness", "brightnes", "braitnes", "braaitnes", "fitness", "bright", "britnes")) return brightness(ctx, w)
+        if (has("brightness", "brightnes", "braitnes", "braaitnes", "fitness", "bright", "britnes", "braaitanes", "braitanes", "braitenes")) return brightness(ctx, w)
         if (has("battery", "charge", "charging", "baitri", "betri", "battary")) {
             return battery(ctx)
         }

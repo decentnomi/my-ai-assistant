@@ -98,7 +98,7 @@ class WakeService : Service() {
                 h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms"); Bus.changed() }
             }
             override fun onDone(id: String?) {
-                h.post { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() }
+                h.post { if (id == "last") { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() } }
             }
             @Deprecated("old")
             override fun onError(id: String?) {
@@ -203,25 +203,6 @@ class WakeService : Service() {
         val rep = Commands.run(this, Roman.of(said)); if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
     }
 
-    private fun speakBack(s: String) {
-        val t = tts
-        if (!ttsReady || t == null) {
-            Bus.add("TTS tayyar nahi")
-            Bus.changed()
-            later(300)
-            return
-        }
-        speaking = true
-        h.removeCallbacks(speakTimeout)
-        h.postDelayed(speakTimeout, 15000)
-        t0 = System.currentTimeMillis()
-        val rc = t.speak(s, TextToSpeech.QUEUE_FLUSH, null, "say")
-        if (rc != TextToSpeech.SUCCESS) {
-            Bus.add("speak ERR " + rc)
-            Bus.changed()
-            afterSpeak()
-        }
-    }
 
     private fun afterSpeak() {
         if (!speaking) return
@@ -249,5 +230,32 @@ class WakeService : Service() {
         Bus.add("Service band")
         Bus.changed()
         super.onDestroy()
+    }
+
+    private fun speakBack(s: String) {
+        val t = tts
+        if (!ttsReady || t == null) {
+            Bus.add("TTS tayyar nahi")
+            Bus.changed()
+            later(300)
+            return
+        }
+        speaking = true
+        h.removeCallbacks(speakTimeout)
+        h.postDelayed(speakTimeout, 20000)
+        val parts = s.split(Regex("(?<=[.!?,;])\\s+")).map { it.trim() }.filter { it.isNotEmpty() }
+        val list = if (parts.isEmpty()) listOf(s) else parts
+        t0 = System.currentTimeMillis()
+        for (i in list.indices) {
+            val id = if (i == list.size - 1) "last" else "c" + i
+            val qm = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            val rc = t.speak(list[i], qm, null, id)
+            if (rc != TextToSpeech.SUCCESS) {
+                Bus.add("speak ERR " + rc)
+                Bus.changed()
+                afterSpeak()
+                return
+            }
+        }
     }
 }
