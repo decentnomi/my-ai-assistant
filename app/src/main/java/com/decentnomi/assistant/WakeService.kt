@@ -266,11 +266,12 @@ class WakeService : Service() {
     private var musicMuted = false
 
     private var lastVol = -1
+
     private fun muteBeep(on: Boolean) {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         try {
-            val am0 = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            if (!am0.isStreamMute(AudioManager.STREAM_MUSIC)) {
-                val v0 = am0.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (!am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                val v0 = am.getStreamVolume(AudioManager.STREAM_MUSIC)
                 if (lastVol >= 0 && v0 != lastVol) {
                     Bus.add("VOLUME badla " + lastVol + " -> " + v0)
                     Bus.changed()
@@ -279,30 +280,22 @@ class WakeService : Service() {
             }
         } catch (e: Exception) {
         }
-        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        try {
+            if (am.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
+            }
+        } catch (e: Exception) {
+        }
         val d = if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
-        for (st in intArrayOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)) {
+        for (st in intArrayOf(
+            AudioManager.STREAM_NOTIFICATION,
+            AudioManager.STREAM_SYSTEM,
+            AudioManager.STREAM_ACCESSIBILITY
+        )) {
             try {
                 am.adjustStreamVolume(st, d, 0)
             } catch (e: Exception) {
             }
-        }
-        try {
-            if (on) {
-                if (!am.isMusicActive) {
-                    if (!musicMuted) {
-                        am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0)
-                        musicMuted = true
-                    }
-                } else if (musicMuted) {
-                    am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
-                    musicMuted = false
-                }
-            } else if (musicMuted) {
-                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0)
-                musicMuted = false
-            }
-        } catch (e: Exception) {
         }
     }
 }
