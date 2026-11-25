@@ -176,7 +176,7 @@ class WakeService : Service() {
         Bus.wakes++
         Bus.add("HUKM: " + said)
         Bus.changed()
-        val rep = Commands.run(this, Roman.of(said)); if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
+        val rep = list.firstNotNullOfOrNull { Commands.run(this, Roman.of(it)) }; if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
     }
 
 
@@ -323,6 +323,7 @@ class WakeService : Service() {
             try {
                 val m = org.vosk.Model(Offline.dir(this).absolutePath)
                 val r = org.vosk.Recognizer(m, 16000.0f)
+                r.setMaxAlternatives(5)
                 h.post {
                     if (!alive) return@post
                     try {
@@ -361,15 +362,27 @@ class WakeService : Service() {
         }.start()
     }
 
+
     private fun voskText(j: String?) {
         if (j == null) return
-        val t = try {
-            org.json.JSONObject(j).optString("text", "")
+        val o = try {
+            org.json.JSONObject(j)
         } catch (e: Exception) {
-            ""
+            return
         }
-        if (t.trim().length < 3) return
+        val list = ArrayList<String>()
+        val alts = o.optJSONArray("alternatives")
+        if (alts != null) {
+            for (i in 0 until alts.length()) {
+                val t = alts.getJSONObject(i).optString("text", "").trim()
+                if (t.isNotEmpty()) list.add(t)
+            }
+        } else {
+            val t = o.optString("text", "").trim()
+            if (t.isNotEmpty()) list.add(t)
+        }
+        if (list.isEmpty() || list[0].length < 3) return
         vosk?.setPause(true)
-        handle(listOf(t.trim()))
+        handle(list)
     }
 }
