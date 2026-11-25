@@ -265,7 +265,20 @@ class WakeService : Service() {
 
     private var musicMuted = false
 
+    private var lastVol = -1
     private fun muteBeep(on: Boolean) {
+        try {
+            val am0 = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (!am0.isStreamMute(AudioManager.STREAM_MUSIC)) {
+                val v0 = am0.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (lastVol >= 0 && v0 != lastVol) {
+                    Bus.add("VOLUME badla " + lastVol + " -> " + v0)
+                    Bus.changed()
+                }
+                lastVol = v0
+            }
+        } catch (e: Exception) {
+        }
         val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val d = if (on) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
         for (st in intArrayOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)) {

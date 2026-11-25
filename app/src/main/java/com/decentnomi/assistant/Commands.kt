@@ -37,6 +37,7 @@ object Commands {
             return volume(ctx, w)
         }
         if (has("brightness", "brightnes", "braitnes", "braaitnes", "fitness", "bright", "britnes", "braaitanes", "braitanes", "braitenes")) return brightness(ctx, w)
+        topicHook(ctx, w)?.let { return it }
         if (has("battery", "charge", "charging", "baitri", "betri", "battary")) {
             return battery(ctx)
         }
@@ -65,6 +66,8 @@ object Commands {
     }
 
     private fun volume(ctx: Context, w: List<String>): String {
+        lastTopic = "vol"
+        lastT = System.currentTimeMillis()
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
         return try {
@@ -169,6 +172,8 @@ object Commands {
     }
 
     private fun brightness(ctx: Context, w: List<String>): String {
+        lastTopic = "bri"
+        lastT = System.currentTimeMillis()
         if (!android.provider.Settings.System.canWrite(ctx)) {
             return "Decent Setup ma ijazat den"
         }
@@ -376,5 +381,18 @@ object Commands {
         val ct = findContact(ctx, q) ?: return q.joinToString(" ") + " naam ka contact nahi mila"
         pending = Triple(ct.first, ct.second, body)
         return Roman.of(ct.first) + " ko ye SMS bhejun? " + body + ". Haan ya nahi bolen"
+    }
+
+    private var lastTopic = ""
+    private var lastT = 0L
+    private val DIRW = setOf(
+        "kam", "kum", "ghatao", "ghata", "down", "low", "dheema", "badhao", "badha", "badhaao",
+        "zyada", "jyada", "ziada", "tez", "up", "full", "max", "maximum", "high", "lo"
+    )
+
+    private fun topicHook(ctx: Context, w: List<String>): String? {
+        if (lastTopic.isEmpty() || System.currentTimeMillis() - lastT > 90000) return null
+        if (w.size > 4 || !w.any { DIRW.contains(it) }) return null
+        return if (lastTopic == "vol") volume(ctx, w) else brightness(ctx, w)
     }
 }
