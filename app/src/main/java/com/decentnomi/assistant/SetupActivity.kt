@@ -217,7 +217,7 @@ class SetupActivity : Activity() {
                 return@TextToSpeech
             }
             benchVoices = (t.voices ?: emptySet<android.speech.tts.Voice>()).filter {
-                !it.isNetworkConnectionRequired && !it.features.contains("notInstalled") &&
+                (!it.isNetworkConnectionRequired || it.locale.language == "ur") && !it.features.contains("notInstalled") &&
                     (it.locale.language == "hi" || it.locale.language == "en")
             }.sortedBy { it.name }.take(12)
             t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
@@ -291,9 +291,9 @@ class SetupActivity : Activity() {
                     return@TextToSpeech
                 }
                 ptList = (t.voices ?: emptySet<android.speech.tts.Voice>()).filter {
-                    !it.isNetworkConnectionRequired && !it.features.contains("notInstalled") &&
+                    (!it.isNetworkConnectionRequired || it.locale.language == "ur") && !it.features.contains("notInstalled") &&
                         (it.locale.language == "hi" || it.locale.language == "en")
-                }.sortedWith(compareBy<android.speech.tts.Voice>({ it.locale.language != "hi" }, { it.name }))
+                }.sortedWith(compareBy<android.speech.tts.Voice>({ when (it.locale.language) { "ur" -> 0; "hi" -> 1; else -> 2 } }, { it.name }))
                 runOnUiThread { nextVoice() }
             }
             return
@@ -307,7 +307,9 @@ class SetupActivity : Activity() {
         t0.voice = v
         prefs().edit().putString("ttsvoice2", v.name).apply()
         toast("Awaz " + (pi + 1) + " / " + ptList.size + ": " + v.name)
-        val line = if (v.locale.language == "hi") {
+        val line = if (v.locale.language == "ur") {
+            "سلام، میں ڈیسنٹ ہوں۔ آپ کا دن کیسا گزرا؟"
+        } else if (v.locale.language == "hi") {
             "नमस्ते, मैं डिसेंट हूँ। आप का दिन कैसा गुज़रा?"
         } else {
             "Hello, I am Decent. How was your day?"

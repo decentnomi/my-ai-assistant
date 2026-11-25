@@ -72,7 +72,9 @@ object Gem {
         val sys = who + " The user speaks Urdu, Hindi or English, often mixed. Reply in the same language style as the user, " +
             "but ALWAYS write using English (Latin) letters only: Roman Urdu or English. " +
             "NEVER use Devanagari or Urdu or Arabic script. Reply in at most 20 words, one or two short sentences, because it is spoken aloud. " +
-            "No emojis, no markdown, no lists. Never invent phone data such as battery level, time or location. Output ONLY a JSON object with two string fields named reply and say. reply uses Roman Urdu or English letters. say is the same sentence written in Devanagari Hindi script so a Hindi voice can speak it naturally, English brand words may stay in English letters. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
+            "No emojis, no markdown, no lists. Never invent phone data such as battery level, time or location. Output ONLY a JSON object with two string fields named reply and say. reply uses Roman Urdu or English letters. say is the same sentence written in Devanagari Hindi script so a Hindi voice can speak it naturally, English brand words may stay in English letters. Default to Pakistani Urdu in Roman letters unless the user clearly spoke only English. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
+        val sc = p.getString("sayscript", "hi") ?: "hi"
+        val sysx = if (sc == "ur") sys.replace("Devanagari Hindi script so a Hindi voice", "Urdu script (Nastaliq, Pakistani Urdu, not Hindi) so an Urdu voice") else sys
         val t0 = System.currentTimeMillis()
         val attempts = ArrayList<Pair<String, Int>>()
         if (goodModel.isNotEmpty()) attempts.add(Pair(goodModel, goodMode))
@@ -85,7 +87,7 @@ object Gem {
             if (dead.contains(a.first)) continue
             if (System.currentTimeMillis() - t0 > 12000) break
             val r = try {
-                postRetry(a.first, key, build(sys, said, a.second))
+                postRetry(a.first, key, build(sysx, said, a.second))
             } catch (e: Exception) {
                 return "Internet ya Gemini ma masla aaya"
             }

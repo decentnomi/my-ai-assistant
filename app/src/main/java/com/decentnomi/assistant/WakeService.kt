@@ -82,6 +82,7 @@ class WakeService : Service() {
         }
         alive = true
         Bus.running = true
+        h.postDelayed(keep, 15000)
         Bus.add("Service chalu")
         Bus.changed()
         if (useVosk()) startVosk() else listen()
@@ -176,7 +177,7 @@ class WakeService : Service() {
         Bus.wakes++
         Bus.add("HUKM: " + said)
         Bus.changed()
-        val rep = list.firstNotNullOfOrNull { Commands.run(this, Roman.of(it)) }; if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(if (hindiOk) Say.hi(rep) else rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(if (hindiOk && Gem.lastSay.isNotEmpty()) Gem.lastSay else r) } } }.start() }
+        val rep = list.firstNotNullOfOrNull { Commands.run(this, Roman.of(it)) }; if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(Say.fit(rep, ttsLang)) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(if ((ttsLang == "hi" || ttsLang == "ur") && Gem.lastSay.isNotEmpty()) Gem.lastSay else r) } } }.start() }
     }
 
 
@@ -246,7 +247,7 @@ class WakeService : Service() {
         var pick: android.speech.tts.Voice? = null
         try {
             val vs = t.voices?.filter {
-                !it.isNetworkConnectionRequired && !it.features.contains("notInstalled")
+                (!it.isNetworkConnectionRequired || it.locale.language == "ur") && !it.features.contains("notInstalled")
             } ?: emptyList()
             pick = vs.firstOrNull { it.locale.language == "hi" }
                 ?: vs.firstOrNull { it.locale.language == "en" && it.locale.country == "IN" }
@@ -259,11 +260,13 @@ class WakeService : Service() {
         }
         val pk = pick
         hindiOk = pk != null && pk.locale.language == "hi"
+        ttsLang = pk?.locale?.language ?: "en"
+        getSharedPreferences("decent", Context.MODE_PRIVATE).edit().putString("sayscript", ttsLang).apply()
         if (pk == null) t.setLanguage(Locale("en", "IN"))
         Bus.add("TTS voice: " + (pk?.name ?: "default (online ho sakti hai)"))
         t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(id: String?) {
-                h.post { Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms " + (tts?.defaultEngine ?: "?") + " / " + (tts?.voice?.name ?: "?") + " net=" + (tts?.voice?.isNetworkConnectionRequired ?: "?")); Bus.changed() }
+                h.post { if (id != "keep") Bus.add("TTS bol raha +" + (System.currentTimeMillis() - t0) + "ms " + (tts?.defaultEngine ?: "?") + " / " + (tts?.voice?.name ?: "?") + " net=" + (tts?.voice?.isNetworkConnectionRequired ?: "?")); Bus.changed() }
             }
             override fun onDone(id: String?) {
                 h.post { if (id == "last") { Bus.add("TTS khatam"); Bus.changed(); afterSpeak() } }
@@ -387,5 +390,19 @@ class WakeService : Service() {
         if (list.isEmpty() || list[0].length < 3) return
         vosk?.setPause(true)
         handle(list)
+    }
+
+    private var ttsLang = "en"
+
+    private val keep: Runnable = object : Runnable {
+        override fun run() {
+            if (alive && !speaking && ttsReady) {
+                try {
+                    tts?.playSilentUtterance(50, TextToSpeech.QUEUE_ADD, "keep")
+                } catch (e: Exception) {
+                }
+            }
+            if (alive) h.postDelayed(this, 15000)
+        }
     }
 }

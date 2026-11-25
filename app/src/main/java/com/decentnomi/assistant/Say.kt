@@ -32,4 +32,42 @@ object Say {
         }
         return sb.toString()
     }
+
+    private val U: Map<String, String> = mapOf(
+        "awaz" to "آواز", "badha" to "بڑھا", "di" to "دی", "kam" to "کم", "kar" to "کر",
+        "full" to "فل", "torch" to "ٹارچ", "jala" to "جلا", "band" to "بند", "flash" to "فلیش",
+        "nahi" to "نہیں", "mila" to "ملا", "brightness" to "برائٹنس", "low" to "لو",
+        "abhi" to "ابھی", "baje" to "بجے", "hain" to "ہیں", "battery" to "بیٹری",
+        "percent" to "فیصد", "hai" to "ہے", "charge" to "چارج", "ho" to "ہو", "rahi" to "رہی",
+        "khol" to "کھول", "raha" to "رہا", "hun" to "ہوں", "ko" to "کو", "call" to "کال",
+        "ye" to "یہ", "sms" to "ایس ایم ایس", "bhejun" to "بھیجوں", "haan" to "ہاں", "ya" to "یا",
+        "bolen" to "بولیں", "theek" to "ٹھیک", "cancel" to "کینسل", "diya" to "دیا", "bhej" to "بھیج",
+        "kisko" to "کس کو", "karni" to "کرنی", "kaun" to "کون", "si" to "سی", "app" to "ایپ",
+        "kholni" to "کھولنی", "decent" to "ڈیسنٹ", "setup" to "سیٹ اپ", "ma" to "میں",
+        "ijazat" to "اجازت", "den" to "دیں", "naam" to "نام", "ki" to "کی", "ka" to "کا",
+        "contact" to "کانٹیکٹ", "bhejne" to "بھیجنے", "masla" to "مسئلہ", "aaya" to "آیا",
+        "internet" to "انٹرنیٹ", "gemini" to "جیمنائی", "key" to "کی", "galat" to "غلط",
+        "masroof" to "مصروف", "thori" to "تھوڑی", "der" to "دیر", "baad" to "بعد", "try" to "ٹرائی",
+        "karen" to "کریں", "pehle" to "پہلے", "am" to "اے ایم", "pm" to "پی ایم", "aur" to "اور",
+        "mein" to "میں", "se" to "سے", "ke" to "کے", "ek" to "ایک", "main" to "میں"
+    )
+
+    fun ur(s: String): String {
+        val sb = StringBuilder()
+        for (m in Regex("[A-Za-z]+|[^A-Za-z]+").findAll(s)) {
+            val w = m.value
+            if (w[0].code < 128 && w[0].isLetter()) {
+                sb.append(U[w.lowercase()] ?: w)
+            } else {
+                sb.append(w)
+            }
+        }
+        return sb.toString()
+    }
+
+    fun fit(s: String, lang: String): String = when (lang) {
+        "hi" -> hi(s)
+        "ur" -> ur(s)
+        else -> s
+    }
 }
