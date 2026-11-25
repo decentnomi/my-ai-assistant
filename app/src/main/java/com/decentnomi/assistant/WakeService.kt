@@ -84,7 +84,7 @@ class WakeService : Service() {
         Bus.running = true
         Bus.add("Service chalu")
         Bus.changed()
-        listen()
+        if (useVosk()) startVosk() else listen()
     }
 
 
@@ -106,6 +106,10 @@ class WakeService : Service() {
     }
 
     private fun listen() {
+        if (useVosk()) {
+            vosk?.setPause(false)
+            return
+        }
         if (!alive) return
         killRec()
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -187,6 +191,11 @@ class WakeService : Service() {
     override fun onDestroy() {
         alive = false
         h.removeCallbacksAndMessages(null)
+        try {
+            vosk?.stop()
+            vosk?.shutdown()
+        } catch (e: Exception) {
+        }
         killRec()
         muteBeep(false)
         try {
@@ -297,5 +306,70 @@ class WakeService : Service() {
             } catch (e: Exception) {
             }
         }
+    }
+
+    private var vosk: org.vosk.android.SpeechService? = null
+    private var voskFailed = false
+
+    private fun useVosk(): Boolean =
+        !voskFailed &&
+            getSharedPreferences("decent", Context.MODE_PRIVATE).getString("engine", "google") == "vosk" &&
+            Offline.ready(this)
+
+    private fun startVosk() {
+        Bus.add("Offline engine load ho raha hai (kuch second)")
+        Bus.changed()
+        Thread {
+            try {
+                val m = org.vosk.Model(Offline.dir(this).absolutePath)
+                val r = org.vosk.Recognizer(m, 16000.0f)
+                h.post {
+                    if (!alive) return@post
+                    try {
+                        val ss = org.vosk.android.SpeechService(r, 16000.0f)
+                        vosk = ss
+                        ss.startListening(object : org.vosk.android.RecognitionListener {
+                            override fun onPartialResult(p: String?) {}
+                            override fun onResult(p: String?) {
+                                voskText(p)
+                            }
+                            override fun onFinalResult(p: String?) {
+                                voskText(p)
+                            }
+                            override fun onError(e: Exception?) {
+                                Bus.add("vosk err " + e?.message)
+                                Bus.changed()
+                            }
+                            override fun onTimeout() {}
+                        })
+                        Bus.add("Offline engine tayyar, ab bolen")
+                    } catch (e: Exception) {
+                        voskFailed = true
+                        Bus.add("Vosk start ERR " + e.message)
+                        listen()
+                    }
+                    Bus.changed()
+                }
+            } catch (e: Throwable) {
+                h.post {
+                    voskFailed = true
+                    Bus.add("Vosk model ERR " + e.message)
+                    Bus.changed()
+                    listen()
+                }
+            }
+        }.start()
+    }
+
+    private fun voskText(j: String?) {
+        if (j == null) return
+        val t = try {
+            org.json.JSONObject(j).optString("text", "")
+        } catch (e: Exception) {
+            ""
+        }
+        if (t.trim().length < 3) return
+        vosk?.setPause(true)
+        handle(listOf(t.trim()))
     }
 }

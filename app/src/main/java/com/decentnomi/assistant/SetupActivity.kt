@@ -86,6 +86,32 @@ class SetupActivity : Activity() {
             }
         }
 
+        add(root, "6. Offline sunne ka model download (42 MB, ek dafa)", { Offline.ready(this) }) {
+            if (Offline.ready(this)) {
+                android.widget.Toast.makeText(this, "Model pehle se maujood hai", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(this, "Download shuru. 1 se 3 minute ruken, app band na karen", android.widget.Toast.LENGTH_LONG).show()
+                Thread {
+                    val err = Offline.download(this) { p ->
+                        runOnUiThread { android.widget.Toast.makeText(this, "Download " + p + "%", android.widget.Toast.LENGTH_SHORT).show() }
+                    }
+                    runOnUiThread {
+                        android.widget.Toast.makeText(this, err ?: "Download mukammal", android.widget.Toast.LENGTH_LONG).show()
+                        refresh()
+                    }
+                }.start()
+            }
+        }
+        add(root, "7. Offline sunna chalu/band (beep nahi aati)", { prefs().getString("engine", "google") == "vosk" }) {
+            if (!Offline.ready(this)) {
+                android.widget.Toast.makeText(this, "Pehle button 6 se model download karen", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                val on = prefs().getString("engine", "google") == "vosk"
+                prefs().edit().putString("engine", if (on) "google" else "vosk").apply()
+                android.widget.Toast.makeText(this, "Badal gaya. Ab Decent app ma BAND karke dobara SHURU karen", android.widget.Toast.LENGTH_LONG).show()
+                refresh()
+            }
+        }
         val et = EditText(this)
         et.hint = "Gemini API key yahan paste karen"
         et.setTextColor(Color.WHITE)
