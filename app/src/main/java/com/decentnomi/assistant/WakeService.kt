@@ -251,6 +251,9 @@ class WakeService : Service() {
             pick = vs.firstOrNull { it.locale.language == "hi" }
                 ?: vs.firstOrNull { it.locale.language == "en" && it.locale.country == "IN" }
                 ?: vs.firstOrNull { it.locale.language == "en" }
+            val sv = getSharedPreferences("decent", Context.MODE_PRIVATE).getString("ttsvoice", "") ?: ""
+            val saved = vs.firstOrNull { it.name == sv }
+            if (saved != null) pick = saved
             if (pick != null) t.voice = pick
         } catch (e: Exception) {
         }

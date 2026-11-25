@@ -17,7 +17,7 @@ object Commands {
         "open", "opan", "kholo", "khol", "kholiye", "kholna", "chalao", "chala",
         "karo", "kar", "do", "dena", "de", "app", "application", "ko", "ki", "ka", "ke",
         "please", "plz", "jaldi", "start", "launch", "mujhe", "mera", "meri", "zara",
-        "ap", "aap", "ji", "haan", "aur", "phir", "karke"
+        "ap", "aap", "ji", "haan", "aur", "phir", "karke", "fir", "fer", "se", "dobara", "dubara", "wapas", "ek", "baar", "bar"
     )
     private val OPEN = setOf(
         "open", "opan", "kholo", "khol", "kholiye", "kholna", "chalao", "chala", "start", "launch"
@@ -38,7 +38,7 @@ object Commands {
         }
         if (has("brightness", "brightnes", "braitnes", "braaitnes", "fitness", "bright", "britnes", "braaitanes", "braitanes", "braitenes")) return brightness(ctx, w)
         topicHook(ctx, w)?.let { return it }
-        if (has("battery", "charge", "charging", "baitri", "betri", "battary")) {
+        if (has("battery", "charge", "charging", "baitri", "betri", "battary", "baitaree", "baitari", "baiteri", "batri", "bataree", "beetri", "baitree")) {
             return battery(ctx)
         }
         if (has("time", "taaim", "waqt", "vakt", "samay", "baje")) {

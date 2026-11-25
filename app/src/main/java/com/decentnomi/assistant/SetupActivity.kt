@@ -112,6 +112,9 @@ class SetupActivity : Activity() {
                 refresh()
             }
         }
+        add(root, "8. Awaz ka test (sab se tez awaz khud chun le)", { (prefs().getString("ttsvoice", "") ?: "") != "" }) {
+            runVoiceTest()
+        }
         val et = EditText(this)
         et.hint = "Gemini API key yahan paste karen"
         et.setTextColor(Color.WHITE)
@@ -188,5 +191,86 @@ class SetupActivity : Activity() {
     override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, g: IntArray) {
         super.onRequestPermissionsResult(rc, p, g)
         refresh()
+    }
+
+    private var vt: android.speech.tts.TextToSpeech? = null
+    private val benchRes = ArrayList<Pair<String, Long>>()
+    private var benchVoices: List<android.speech.tts.Voice> = emptyList()
+    private var benchT0 = 0L
+    private var benchI = 0
+    private var benchStarted = false
+
+    private fun toast(s: String) {
+        runOnUiThread { android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
+    private fun runVoiceTest() {
+        toast("Awaz ka test shuru. Kuch awazen aayengi, 1 se 2 minute ruken")
+        benchRes.clear()
+        vt = android.speech.tts.TextToSpeech(this) { st ->
+            val t = vt
+            if (st != android.speech.tts.TextToSpeech.SUCCESS || t == null) {
+                toast("TTS shuru nahi hua")
+                return@TextToSpeech
+            }
+            benchVoices = (t.voices ?: emptySet<android.speech.tts.Voice>()).filter {
+                !it.isNetworkConnectionRequired && !it.features.contains("notInstalled") &&
+                    (it.locale.language == "hi" || it.locale.language == "en")
+            }.sortedBy { it.name }.take(12)
+            t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(u: String?) {
+                    if (!benchStarted && benchI < benchVoices.size) {
+                        benchStarted = true
+                        benchRes.add(Pair(benchVoices[benchI].name, System.currentTimeMillis() - benchT0))
+                    }
+                }
+                override fun onDone(u: String?) {
+                    runOnUiThread {
+                        benchI++
+                        benchNext()
+                    }
+                }
+                @Deprecated("old")
+                override fun onError(u: String?) {
+                    runOnUiThread {
+                        benchI++
+                        benchNext()
+                    }
+                }
+            })
+            benchI = 0
+            runOnUiThread { benchNext() }
+        }
+    }
+
+    private fun benchNext() {
+        val t = vt ?: return
+        if (benchI >= benchVoices.size) {
+            val best = benchRes.minByOrNull { it.second }
+            if (best != null) {
+                prefs().edit().putString("ttsvoice", best.first).apply()
+                toast("Sab se tez awaz: " + best.first + " (" + best.second + " ms). Decent ko BAND karke dobara SHURU karen")
+            } else {
+                toast("Koi awaz test na ho saki")
+            }
+            t.shutdown()
+            vt = null
+            refresh()
+            return
+        }
+        benchStarted = false
+        val my = benchI
+        t.voice = benchVoices[benchI]
+        benchT0 = System.currentTimeMillis()
+        t.speak(
+            "Jaanch number " + (benchI + 20) + ", aaj ka din kaisa guzra",
+            android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "b" + benchI
+        )
+        android.os.Handler(mainLooper).postDelayed({
+            if (benchI == my && vt != null) {
+                benchI++
+                benchNext()
+            }
+        }, 9000)
     }
 }

@@ -71,7 +71,7 @@ object Gem {
         val sys = who + " The user speaks Urdu, Hindi or English, often mixed. Reply in the same language style as the user, " +
             "but ALWAYS write using English (Latin) letters only: Roman Urdu or English. " +
             "NEVER use Devanagari or Urdu or Arabic script. Reply in at most 20 words, one or two short sentences, because it is spoken aloud. " +
-            "No emojis, no markdown, no lists. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
+            "No emojis, no markdown, no lists. Never invent phone data such as battery level, time or location. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
         val t0 = System.currentTimeMillis()
         val attempts = ArrayList<Pair<String, Int>>()
         if (goodModel.isNotEmpty()) attempts.add(Pair(goodModel, goodMode))
