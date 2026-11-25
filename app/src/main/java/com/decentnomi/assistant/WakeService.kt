@@ -243,17 +243,17 @@ class WakeService : Service() {
 
     private fun setupVoice() {
         val t = tts ?: return
-        t.setLanguage(Locale("hi", "IN"))
+        t.setLanguage(Locale("ur", "PK"))
         var pick: android.speech.tts.Voice? = null
         try {
             val vs = t.voices?.filter {
                 (!it.isNetworkConnectionRequired || it.locale.language == "ur") && !it.features.contains("notInstalled")
             } ?: emptyList()
-            pick = vs.firstOrNull { it.locale.language == "hi" }
+            pick = vs.firstOrNull { it.locale.language == "ur" }
                 ?: vs.firstOrNull { it.locale.language == "en" && it.locale.country == "IN" }
                 ?: vs.firstOrNull { it.locale.language == "en" }
             val sv = getSharedPreferences("decent", Context.MODE_PRIVATE).getString("ttsvoice2", "") ?: ""
-            val saved = vs.firstOrNull { it.name == sv }
+            val saved = vs.firstOrNull { it.name == sv && it.locale.language != "hi" }
             if (saved != null) pick = saved
             if (pick != null) t.voice = pick
         } catch (e: Exception) {

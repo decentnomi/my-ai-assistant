@@ -303,7 +303,7 @@ class SetupActivity : Activity() {
             return
         }
         pi = (pi + 1) % ptList.size
-        val v = ptList[pi]
+        var v = ptList[pi]; var g = 0; while (v.locale.language == "hi" && g++ < ptList.size) { pi = (pi + 1) % ptList.size; v = ptList[pi] }
         t0.voice = v
         prefs().edit().putString("ttsvoice2", v.name).apply()
         toast("Awaz " + (pi + 1) + " / " + ptList.size + ": " + v.name)
