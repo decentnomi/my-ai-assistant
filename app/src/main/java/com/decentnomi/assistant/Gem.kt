@@ -8,6 +8,7 @@ import java.net.URL
 
 object Gem {
     var last = ""
+    var lastSay = ""
     private var goodModel = ""
     private var goodMode = -1
     private val hist = ArrayList<Pair<String, String>>()
@@ -48,7 +49,7 @@ object Gem {
             JSONObject().put("role", "user")
                 .put("parts", JSONArray().put(JSONObject().put("text", said)))
         )
-        val gc = JSONObject().put("maxOutputTokens", 120)
+        val gc = JSONObject().put("maxOutputTokens", 220).put("responseMimeType", "application/json")
         if (mode == 0) gc.put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal"))
         if (mode == 1) gc.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
         return JSONObject()
@@ -71,7 +72,7 @@ object Gem {
         val sys = who + " The user speaks Urdu, Hindi or English, often mixed. Reply in the same language style as the user, " +
             "but ALWAYS write using English (Latin) letters only: Roman Urdu or English. " +
             "NEVER use Devanagari or Urdu or Arabic script. Reply in at most 20 words, one or two short sentences, because it is spoken aloud. " +
-            "No emojis, no markdown, no lists. Never invent phone data such as battery level, time or location. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
+            "No emojis, no markdown, no lists. Never invent phone data such as battery level, time or location. Output ONLY a JSON object with two string fields named reply and say. reply uses Roman Urdu or English letters. say is the same sentence written in Devanagari Hindi script so a Hindi voice can speak it naturally, English brand words may stay in English letters. If asked to do a phone action you cannot do, briefly say you cannot do that yet."
         val t0 = System.currentTimeMillis()
         val attempts = ArrayList<Pair<String, Int>>()
         if (goodModel.isNotEmpty()) attempts.add(Pair(goodModel, goodMode))
@@ -95,7 +96,7 @@ object Gem {
                 } catch (e: Exception) {
                     ""
                 }
-                val out = Roman.of(t).replace(Regex("[*#_`]"), "").trim()
+                var rep = t; lastSay = ""; try { val jo = JSONObject(t); rep = jo.optString("reply", t); lastSay = jo.optString("say", "").trim() } catch (e: Exception) { }; val out = Roman.of(rep).replace(Regex("[*#_`]"), "").trim()
                 if (out.isEmpty()) return "Gemini ne jawab nahi diya"
                 goodModel = a.first
                 goodMode = a.second

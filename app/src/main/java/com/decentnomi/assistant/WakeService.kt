@@ -176,7 +176,7 @@ class WakeService : Service() {
         Bus.wakes++
         Bus.add("HUKM: " + said)
         Bus.changed()
-        val rep = list.firstNotNullOfOrNull { Commands.run(this, Roman.of(it)) }; if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(r) } } }.start() }
+        val rep = list.firstNotNullOfOrNull { Commands.run(this, Roman.of(it)) }; if (rep != null) { Bus.add("JAWAB: " + rep); Bus.changed(); speakBack(if (hindiOk) Say.hi(rep) else rep) } else { Bus.add("Gemini se pooch raha"); Bus.changed(); Thread { val t1 = System.currentTimeMillis(); val r = Gem.ask(this, said); val ms = System.currentTimeMillis() - t1; h.post { if (alive) { Bus.add("Gemini " + ms + "ms " + Gem.last); Bus.add("JAWAB: " + r); Bus.changed(); speakBack(if (hindiOk && Gem.lastSay.isNotEmpty()) Gem.lastSay else r) } } }.start() }
     }
 
 
@@ -251,7 +251,7 @@ class WakeService : Service() {
             pick = vs.firstOrNull { it.locale.language == "hi" }
                 ?: vs.firstOrNull { it.locale.language == "en" && it.locale.country == "IN" }
                 ?: vs.firstOrNull { it.locale.language == "en" }
-            val sv = getSharedPreferences("decent", Context.MODE_PRIVATE).getString("ttsvoice", "") ?: ""
+            val sv = getSharedPreferences("decent", Context.MODE_PRIVATE).getString("ttsvoice2", "") ?: ""
             val saved = vs.firstOrNull { it.name == sv }
             if (saved != null) pick = saved
             if (pick != null) t.voice = pick

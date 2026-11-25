@@ -115,6 +115,9 @@ class SetupActivity : Activity() {
         add(root, "8. Awaz ka test (sab se tez awaz khud chun le)", { (prefs().getString("ttsvoice", "") ?: "") != "" }) {
             runVoiceTest()
         }
+        add(root, "9. Awaz badlen (dabate jayen, jo pasand aaye rakh len)", { (prefs().getString("ttsvoice2", "") ?: "") != "" }) {
+            nextVoice()
+        }
         val et = EditText(this)
         et.hint = "Gemini API key yahan paste karen"
         et.setTextColor(Color.WHITE)
@@ -272,5 +275,44 @@ class SetupActivity : Activity() {
                 benchNext()
             }
         }, 9000)
+    }
+
+    private var pt: android.speech.tts.TextToSpeech? = null
+    private var ptList: List<android.speech.tts.Voice> = emptyList()
+    private var pi = -1
+
+    private fun nextVoice() {
+        val t0 = pt
+        if (t0 == null) {
+            pt = android.speech.tts.TextToSpeech(this) { st ->
+                val t = pt
+                if (st != android.speech.tts.TextToSpeech.SUCCESS || t == null) {
+                    toast("TTS shuru nahi hua")
+                    return@TextToSpeech
+                }
+                ptList = (t.voices ?: emptySet<android.speech.tts.Voice>()).filter {
+                    !it.isNetworkConnectionRequired && !it.features.contains("notInstalled") &&
+                        (it.locale.language == "hi" || it.locale.language == "en")
+                }.sortedWith(compareBy<android.speech.tts.Voice>({ it.locale.language != "hi" }, { it.name }))
+                runOnUiThread { nextVoice() }
+            }
+            return
+        }
+        if (ptList.isEmpty()) {
+            toast("Koi local awaz nahi mili")
+            return
+        }
+        pi = (pi + 1) % ptList.size
+        val v = ptList[pi]
+        t0.voice = v
+        prefs().edit().putString("ttsvoice2", v.name).apply()
+        toast("Awaz " + (pi + 1) + " / " + ptList.size + ": " + v.name)
+        val line = if (v.locale.language == "hi") {
+            "नमस्ते, मैं डिसेंट हूँ। आप का दिन कैसा गुज़रा?"
+        } else {
+            "Hello, I am Decent. How was your day?"
+        }
+        t0.speak(line, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "pick")
+        refresh()
     }
 }
