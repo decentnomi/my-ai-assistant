@@ -23,12 +23,14 @@ object Commands {
         "open", "opan", "kholo", "khol", "kholiye", "kholna", "chalao", "chala", "start", "launch"
     )
 
+var onSay: ((String) -> Unit)? = null; private var mpending: Array<String>? = null
     fun run(ctx: Context, said: String): String? {
         val t = said.lowercase(Locale.ROOT)
         val w = t.split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
 
         smsHook(ctx, w)?.let { return it }
+msgHook(ctx, w)?.let { return it }
 if (!has("brightness", "bright", "fitness") && ((has("screen", "scrin", "skrin", "skreen", "iskreen", "display", "disple") && has("band", "bund", "bandh", "off", "lock", "laak")) || has("lock", "laak"))) { return if (LockService.lock()) "Screen band kar di" else "Setup ma Accessibility chalu karen" }
         if (has("torch", "tarch", "flashlight", "flash", "light", "lite", "laait", "roshni", "taag", "taarch", "tauch", "toch", "tarj")) {
             val on = !has("band", "off", "bujha", "bujhao", "bandh", "bund", "baandh", "baand", "of", "aff")
@@ -395,5 +397,51 @@ if (!has("brightness", "bright", "fitness") && ((has("screen", "scrin", "skrin",
         if (lastTopic.isEmpty() || System.currentTimeMillis() - lastT > 90000) return null
         if (w.size > 4 || !w.any { DIRW.contains(it) }) return null
         return if (lastTopic == "vol") volume(ctx, w) else brightness(ctx, w)
+    }
+
+    private val MAPPS = mapOf(
+        "whatsapp" to "com.whatsapp", "watsapp" to "com.whatsapp", "whatsap" to "com.whatsapp", "vhatsapp" to "com.whatsapp",
+        "instagram" to "com.instagram.android", "insta" to "com.instagram.android", "instagraam" to "com.instagram.android",
+        "messenger" to "com.facebook.orca", "masenger" to "com.facebook.orca",
+        "telegram" to "org.telegram.messenger", "tiktok" to "com.zhiliaoapp.musically",
+        "snapchat" to "com.snapchat.android", "snap" to "com.snapchat.android"
+    )
+    private val MSKIP = setOf("message", "msg", "mesej", "massage", "karo", "kar", "do", "bhejo", "bhej", "pe", "par", "per", "ma", "mein", "me", "se", "ko")
+
+    private fun doMsg(ctx: Context, p: Array<String>): String {
+        if (!android.provider.Settings.canDrawOverlays(ctx)) return "Decent Setup ma Display over other apps allow karen"
+        val svc = LockService.inst ?: return "Decent Setup ma Accessibility chalu karen"
+        svc.sendMsg(ctx, p[0], p[1], p[2]) { r -> onSay?.invoke(r) }
+        return "Bhej raha hun"
+    }
+
+    private fun msgHook(ctx: Context, w: List<String>): String? {
+        val p = mpending
+        if (p != null) {
+            mpending = null
+            val no = w.any { NO.contains(it) }
+            val yes = w.any { YES.contains(it) }
+            if (yes && !no) return doMsg(ctx, p)
+            if (no) return "Theek hai, message cancel kar diya"
+            return null
+        }
+        val aw = w.firstOrNull { MAPPS.containsKey(it) } ?: return null
+        val ko = w.indexOf("ko")
+        if (ko <= 0) return null
+        val q = w.subList(0, ko).filter { !MSKIP.contains(it) && !STOP.contains(it) && !MAPPS.containsKey(it) }
+        if (q.isEmpty()) return "Kis ko message bhejna hai?"
+        var bi = -1
+        for (i in ko + 1 until w.size) {
+            if (BODYKEY.contains(w[i])) { bi = i; break }
+        }
+        if (bi < 0 || bi + 1 >= w.size) return "Message ma kya likhna hai? Aise bolen: Ali ko " + aw + " karo ke main aa raha hun"
+        val body = w.subList(bi + 1, w.size).joinToString(" ")
+        var nm = q.joinToString(" ")
+        if (ctx.checkSelfPermission(android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            val ct = findContact(ctx, q)
+            if (ct != null) nm = ct.first
+        }
+        mpending = arrayOf(MAPPS[aw]!!, nm, body)
+        return Roman.of(nm) + " ko " + aw + " par ye bhejun? " + body + ". Haan ya nahi bolen"
     }
 }

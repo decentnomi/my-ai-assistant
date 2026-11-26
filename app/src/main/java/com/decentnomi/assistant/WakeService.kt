@@ -82,6 +82,7 @@ class WakeService : Service() {
         }
         alive = true
         Bus.running = true
+Commands.onSay = { s -> h.post { speakBack(Say.fit(s, ttsLang)) } }
         h.postDelayed(keep, 15000)
         Bus.add("Service chalu")
         Bus.changed()
