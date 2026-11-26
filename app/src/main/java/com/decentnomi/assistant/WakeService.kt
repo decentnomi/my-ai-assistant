@@ -254,7 +254,7 @@ class WakeService : Service() {
                 ?: vs.firstOrNull { it.locale.language == "en" }
             val sv = getSharedPreferences("decent", Context.MODE_PRIVATE).getString("ttsvoice2", "") ?: ""
 Bus.add("VOICES: " + (t.voices?.filter { it.locale.language == "ur" || it.locale.language == "hi" }?.joinToString { it.name + " net=" + it.isNetworkConnectionRequired + " ni=" + it.features.contains("notInstalled") } ?: "none") + " eng=" + (tts?.defaultEngine ?: "?"))
-            val saved = vs.firstOrNull { it.name == sv && it.locale.language != "hi" }
+            val saved = vs.firstOrNull { it.name == sv && it.locale.language == "ur" }
             if (saved != null) pick = saved
             if (pick != null) t.voice = pick
         } catch (e: Exception) {
