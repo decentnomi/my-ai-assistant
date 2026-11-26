@@ -73,6 +73,7 @@ class SetupActivity : Activity() {
         add(root, "2. Display over other apps", { Settings.canDrawOverlays(this) }) {
             go(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, pkg))
         }
+add(root, "2b. Accessibility (screen band ke liye)", { (Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").contains("LockService") }) { go(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         add(root, "3. Modify system settings", { Settings.System.canWrite(this) }) {
             go(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, pkg))
         }

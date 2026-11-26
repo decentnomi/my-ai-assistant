@@ -29,8 +29,9 @@ object Commands {
         fun has(vararg k: String): Boolean = k.any { w.contains(it) }
 
         smsHook(ctx, w)?.let { return it }
-        if (has("torch", "tarch", "flashlight", "flash", "light", "lite", "laait", "roshni")) {
-            val on = !has("band", "off", "bujha", "bujhao", "bandh", "bund")
+if (!has("brightness", "bright", "fitness") && ((has("screen", "scrin", "skrin", "skreen", "iskreen", "display", "disple") && has("band", "bund", "bandh", "off", "lock", "laak")) || has("lock", "laak"))) { return if (LockService.lock()) "Screen band kar di" else "Setup ma Accessibility chalu karen" }
+        if (has("torch", "tarch", "flashlight", "flash", "light", "lite", "laait", "roshni", "taag", "taarch", "tauch", "toch", "tarj")) {
+            val on = !has("band", "off", "bujha", "bujhao", "bandh", "bund", "baandh", "baand", "of", "aff")
             return torch(ctx, on)
         }
         if (has("volume", "volyoom", "vol", "awaz", "awaaz", "aavaz", "aavaaj", "aawaz")) {
